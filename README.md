@@ -7,9 +7,9 @@ Polish → English sentence translation drills for live lessons. Replaces the Wo
 
 ## How it works
 
-1. The teacher writes **English** sentences — the answers — on the teacher page, and highlights the key expressions from the lesson by selecting words (up to four per sentence, each in its own colour).
+1. The teacher writes **English** sentences — the answers — on the teacher page, and highlights the key expressions from the lesson: click a word, or drag across several, and the highlight is added on release (up to four per sentence, each in its own colour). It is the same gesture TBT Drag & Drop uses for gaps. Each highlight appears as a chip with × to remove it.
 2. **Translate** sends the sentences to OpenAI in one call. The AI writes a natural Polish sentence for each, marks the Polish words that express each highlighted expression in the same colour, and drafts a one-line language note.
-3. The teacher **reviews**: edits the Polish, re-pairs or adds Polish highlights by selecting words and choosing the colour, edits the note. Rows whose English changed after translation are flagged.
+3. The teacher **reviews**: edits the Polish, fixes the note, and adds missing Polish highlights the same way — click or drag the Polish words, and they pair with the first English colour that has no partner yet (or the one chosen, when several are missing). A range touching an existing highlight is refused with a message. Rows whose English changed after translation are flagged.
 4. **Approve and publish** gives a link and a QR code. The link never changes, even when the drill is edited later.
 5. Students (logged in) see one Polish sentence at a time:
    - **Hint** (`H`) lists each highlighted Polish expression with its English gapped — `p___ your b____` — and a tap reveals it.
@@ -34,7 +34,7 @@ The plugin lives under the **TBT** hub menu when TBT Hub is active (**TBT → Tr
 
 | Shortcode | Attribute | Default | Meaning |
 | --- | --- | --- | --- |
-| `[tbt_drill_builder]` | `hero` | `yes` | The teacher page. `hero="no"` hides the built-in TBT hero when the Divi page has its own. |
+| `[tbt_drill_builder]` | `hero` | `no` | The teacher page. The TBT pages carry their own header row in Divi; `hero="yes"` brings the built-in one back on a bare page. |
 | `[tbt_drill]` | — | — | The student page. The drill comes from `?drill={slug}`. |
 
 The teacher page has two views on one URL: the library (default), and the builder (`?tbtd_new=1`, `?tbtd_edit={id}`). It renders nothing at all for a visitor without the capability.

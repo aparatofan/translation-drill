@@ -130,19 +130,6 @@
 		return '';
 	}
 
-	/** Remove marks overlapping [start, end); returns the numbers removed. */
-	function dropOverlapping( side, start, end ) {
-		var removed = [];
-		side.marks = side.marks.filter( function ( mk ) {
-			var hit = mk.start < end && mk.end > start;
-			if ( hit ) {
-				removed.push( mk.n );
-			}
-			return ! hit;
-		} );
-		return removed;
-	}
-
 	function dropNumber( side, n ) {
 		side.marks = side.marks.filter( function ( mk ) { return mk.n !== n; } );
 	}
@@ -186,42 +173,47 @@
 		side.text = newText;
 	}
 
-	var WORD = /[0-9A-Za-zÀ-ɏЀ-ӿ'’\-]/;
+	var WORD_RE = /[\p{L}\p{N}][\p{L}\p{N}'’\-]*/gu;
 
-	/** Widen a selection to whole words and trim spaces and punctuation. */
-	function snapToWords( text, start, end ) {
-		while ( start > 0 && WORD.test( text[ start - 1 ] ) && WORD.test( text[ start ] || '' ) ) {
-			start--;
+	/**
+	 * Split a sentence into word and separator segments for the picker.
+	 *
+	 * Boundaries come from the words and from every highlight edge, so a
+	 * highlight the AI placed mid-word still renders exactly where it is.
+	 * Only word segments can be clicked; separators ride along inside a range.
+	 */
+	function segments( side ) {
+		var text = side.text;
+		var cuts = {};
+		var words = [];
+		var m;
+		cuts[ 0 ] = true;
+		cuts[ text.length ] = true;
+		WORD_RE.lastIndex = 0;
+		while ( ( m = WORD_RE.exec( text ) ) !== null ) {
+			cuts[ m.index ] = true;
+			cuts[ m.index + m[ 0 ].length ] = true;
+			words.push( [ m.index, m.index + m[ 0 ].length ] );
 		}
-		while ( end < text.length && WORD.test( text[ end ] ) && WORD.test( text[ end - 1 ] || '' ) ) {
-			end++;
+		side.marks.forEach( function ( mk ) {
+			cuts[ mk.start ] = true;
+			cuts[ mk.end ] = true;
+		} );
+		var points = Object.keys( cuts ).map( Number ).sort( function ( a, b ) { return a - b; } );
+		var out = [];
+		for ( var i = 0; i < points.length - 1; i++ ) {
+			var s = points[ i ];
+			var e = points[ i + 1 ];
+			if ( e <= s ) {
+				continue;
+			}
+			out.push( {
+				start: s,
+				end: e,
+				word: words.some( function ( w ) { return s >= w[ 0 ] && e <= w[ 1 ]; } )
+			} );
 		}
-		while ( start < end && ! WORD.test( text[ start ] ) ) {
-			start++;
-		}
-		while ( end > start && ! WORD.test( text[ end - 1 ] ) ) {
-			end--;
-		}
-		return end > start ? { start: start, end: end } : null;
-	}
-
-	/** Character offsets of the current selection inside a container. */
-	function selectionIn( container ) {
-		var sel = window.getSelection ? window.getSelection() : null;
-		if ( ! sel || sel.rangeCount === 0 || sel.isCollapsed ) {
-			return null;
-		}
-		var range = sel.getRangeAt( 0 );
-		if ( ! container.contains( range.startContainer ) || ! container.contains( range.endContainer ) ) {
-			return null;
-		}
-		var pre = document.createRange();
-		pre.selectNodeContents( container );
-		pre.setEnd( range.startContainer, range.startOffset );
-		var start = pre.toString().length;
-		pre.setEnd( range.endContainer, range.endOffset );
-		var end = pre.toString().length;
-		return start < end ? { start: start, end: end } : null;
+		return out;
 	}
 
 	function api( method, path, body ) {
@@ -416,8 +408,12 @@
 				// The English the current Polish was made from. Saved drills
 				// count as up to date; a change to the English flags the row.
 				src: fromServer && pl.text ? serialize( en ) : null,
-				sel: { en: null, pl: null },
-				active: { en: null, pl: null },
+				// A one-line message under each picker ("overlaps…", "all four
+				// colours used…"), cleared by the next successful action.
+				notice: { en: '', pl: '' },
+				// The English colour the next Polish selection pairs with, when
+				// the teacher picked one; otherwise the first unpaired colour.
+				target: null,
 				dom: {}
 			};
 		}
@@ -527,10 +523,6 @@
 				onclick: function () { translate( [ item ] ); }
 			} );
 
-			[ d.enPreview, d.plPreview ].forEach( function ( preview ) {
-				preview.addEventListener( 'click', onPreviewClick );
-			} );
-
 			d.row = el( 'li', { className: 'tbtd-item', 'data-key': item.key }, [
 				el( 'div', { className: 'tbtd-item-head' }, [ d.n, d.status, removeBtn ] ),
 				el( 'div', { className: 'tbtd-lang' }, [
@@ -554,104 +546,142 @@
 			return d.row;
 		}
 
+		/**
+		 * The picker: the sentence as clickable words, highlights painted in.
+		 * Clicking a word highlights it; dragging across words highlights the
+		 * range on release — the gesture TBT Drag & Drop uses for gaps.
+		 */
 		function renderPreview( item, sideName ) {
 			var side = item[ sideName ];
 			var box = sideName === 'en' ? item.dom.enPreview : item.dom.plPreview;
 			box.innerHTML = '';
+			box.classList.toggle( 'is-empty', ! side.text );
 			if ( ! side.text ) {
 				box.appendChild( el( 'span', { className: 'tbtd-preview-empty', text: sideName === 'en' ? t.enEmpty : t.plEmpty } ) );
 				return;
 			}
-			var pos = 0;
-			side.marks.slice().sort( function ( a, b ) { return a.start - b.start; } ).forEach( function ( mk ) {
-				if ( mk.start > pos ) {
-					box.appendChild( document.createTextNode( side.text.slice( pos, mk.start ) ) );
+			var marks = side.marks.slice().sort( function ( a, b ) { return a.start - b.start; } );
+			var holder = null;
+			var current = null;
+			segments( side ).forEach( function ( seg ) {
+				var mk = null;
+				for ( var i = 0; i < marks.length; i++ ) {
+					if ( seg.start >= marks[ i ].start && seg.end <= marks[ i ].end ) {
+						mk = marks[ i ];
+						break;
+					}
 				}
-				box.appendChild( el( 'mark', {
-					className: 'tbtd-hl tbtd-hl' + mk.n + ( item.active[ sideName ] === mk.n ? ' is-active' : '' ),
-					'data-n': String( mk.n ),
-					title: t.removeHighlight,
-					text: side.text.slice( mk.start, mk.end )
-				} ) );
-				pos = mk.end;
+				if ( mk !== current ) {
+					current = mk;
+					holder = mk ? el( 'mark', { className: 'tbtd-hl tbtd-hl' + mk.n, 'data-n': String( mk.n ) } ) : null;
+					if ( holder ) {
+						box.appendChild( holder );
+					}
+				}
+				var node = seg.word
+					? el( 'span', {
+						className: 'tbtd-w',
+						'data-s': String( seg.start ),
+						'data-e': String( seg.end ),
+						tabindex: mk ? null : '0',
+						role: mk ? null : 'button',
+						text: side.text.slice( seg.start, seg.end )
+					} )
+					: document.createTextNode( side.text.slice( seg.start, seg.end ) );
+				( holder || box ).appendChild( node );
 			} );
-			if ( pos < side.text.length ) {
-				box.appendChild( document.createTextNode( side.text.slice( pos ) ) );
-			}
 		}
 
 		function dot( n ) {
 			return el( 'span', { className: 'tbtd-dot tbtd-dot' + n, 'aria-hidden': 'true' } );
 		}
 
-		function toolButton( label, n, onclick, extraClass ) {
-			var btn = el( 'button', {
-				type: 'button',
-				className: 'tbtd-tool' + ( extraClass ? ' ' + extraClass : '' ),
-				onclick: onclick
-			}, [ n ? dot( n ) : null, el( 'span', { text: label } ) ] );
-			// Keep the text selection alive while the button is pressed.
-			btn.addEventListener( 'mousedown', function ( e ) { e.preventDefault(); } );
-			return btn;
+		/** A highlight as a chip with its colour, its words and a remove button. */
+		function chip( item, sideName, n ) {
+			var words = fragment( item[ sideName ], n );
+			return el( 'span', { className: 'tbtd-chip-hl tbtd-chip-hl' + n }, [
+				dot( n ),
+				el( 'span', { text: words } ),
+				el( 'button', {
+					type: 'button',
+					className: 'tbtd-chip-x',
+					'aria-label': fmt( t.removeNamed, words ),
+					title: t.removeHighlight,
+					text: '×',
+					onclick: function () { removeMark( item, sideName, n ); }
+				} )
+			] );
+		}
+
+		/** The Polish colour the next selection pairs with, or 0 when all are paired. */
+		function plTarget( item ) {
+			var missing = missingNumbers( item );
+			if ( item.target && missing.indexOf( item.target ) !== -1 ) {
+				return item.target;
+			}
+			return missing.length ? missing[ 0 ] : 0;
 		}
 
 		function renderTools( item, sideName ) {
 			var box = sideName === 'en' ? item.dom.enTools : item.dom.plTools;
-			var sel = item.sel[ sideName ];
-			var active = item.active[ sideName ];
 			var side = item[ sideName ];
 			box.innerHTML = '';
-
-			if ( active ) {
-				box.appendChild( toolButton( t.removeHighlight + ': “' + fragment( side, active ) + '”', active, function () {
-					removeMark( item, sideName, active );
-				}, 'tbtd-tool--remove' ) );
+			if ( ! side.text ) {
 				return;
 			}
 
+			var chips = el( 'div', { className: 'tbtd-chips' } );
+			side.marks.slice().sort( function ( a, b ) { return a.n - b.n; } ).forEach( function ( mk ) {
+				chips.appendChild( chip( item, sideName, mk.n ) );
+			} );
+			if ( chips.childNodes.length ) {
+				box.appendChild( chips );
+			}
+
+			if ( item.notice[ sideName ] ) {
+				box.appendChild( el( 'p', { className: 'tbtd-tools-hint tbtd-tools-hint--warn', role: 'status', text: item.notice[ sideName ] } ) );
+			}
+
 			if ( sideName === 'en' ) {
-				if ( sel ) {
-					var free = freeNumber( item, sel );
-					if ( free ) {
-						box.appendChild( toolButton( t.highlight + ' “' + side.text.slice( sel.start, sel.end ) + '”', free, function () {
-							addEnMark( item, sel, free );
-						} ) );
-					} else {
-						box.appendChild( el( 'p', { className: 'tbtd-tools-hint', text: t.allColoursUsed } ) );
-					}
-				} else if ( side.text ) {
-					box.appendChild( el( 'p', { className: 'tbtd-tools-hint', text: t.enHint } ) );
-				}
+				box.appendChild( el( 'p', {
+					className: 'tbtd-tools-hint',
+					text: side.marks.length >= MAX_MARKS ? t.allColoursUsed : t.enHint
+				} ) );
 				return;
 			}
 
 			// Polish side.
-			var enNumbers = numbersOf( item.en );
-			if ( ! side.text ) {
-				return;
-			}
-			if ( ! enNumbers.length ) {
+			if ( ! item.en.marks.length ) {
 				box.appendChild( el( 'p', { className: 'tbtd-tools-hint', text: t.plNoMarks } ) );
 				return;
 			}
-			if ( sel ) {
-				box.appendChild( el( 'p', { className: 'tbtd-tools-hint', text: t.plPickColour } ) );
-				enNumbers.forEach( function ( n ) {
-					box.appendChild( toolButton( fragment( item.en, n ), n, function () {
-						setPlMark( item, sel, n );
-					} ) );
-				} );
+			var missing = missingNumbers( item );
+			if ( ! missing.length ) {
+				box.appendChild( el( 'p', { className: 'tbtd-tools-hint tbtd-tools-hint--ok', text: t.plAllPaired } ) );
 				return;
 			}
-			var missing = missingNumbers( item );
-			if ( missing.length ) {
-				box.appendChild( el( 'p', { className: 'tbtd-tools-hint tbtd-tools-hint--warn', text: t.plSelectFor } ) );
-				missing.forEach( function ( n ) {
-					box.appendChild( el( 'span', { className: 'tbtd-tool tbtd-tool--static' }, [ dot( n ), el( 'span', { text: fragment( item.en, n ) } ) ] ) );
-				} );
-			} else {
-				box.appendChild( el( 'p', { className: 'tbtd-tools-hint tbtd-tools-hint--ok', text: t.plAllPaired } ) );
-			}
+			var target = plTarget( item );
+			var line = el( 'div', { className: 'tbtd-target' }, [ el( 'span', { className: 'tbtd-tools-hint', text: t.plSelectFor } ) ] );
+			missing.forEach( function ( n ) {
+				// With one colour missing there is nothing to choose; with
+				// several, each is a button that makes it the next pairing.
+				var attrs = {
+					className: 'tbtd-target-opt' + ( n === target ? ' is-target' : '' ),
+					'aria-pressed': missing.length > 1 ? ( n === target ? 'true' : 'false' ) : null
+				};
+				var children = [ dot( n ), el( 'span', { text: fragment( item.en, n ) } ) ];
+				if ( missing.length > 1 ) {
+					attrs.type = 'button';
+					attrs.onclick = function () {
+						item.target = n;
+						renderTools( item, 'pl' );
+					};
+					line.appendChild( el( 'button', attrs, children ) );
+				} else {
+					line.appendChild( el( 'span', attrs, children ) );
+				}
+			} );
+			box.appendChild( line );
 		}
 
 		function refreshRow( item ) {
@@ -691,8 +721,7 @@
 			var side = item[ sideName ];
 			var before = numbersOf( side );
 			adjustMarks( side, side.text, cleaned );
-			item.sel[ sideName ] = null;
-			item.active[ sideName ] = null;
+			item.notice[ sideName ] = '';
 
 			if ( sideName === 'en' ) {
 				// An English highlight that vanished takes its Polish partner with it.
@@ -710,11 +739,8 @@
 			markDirty();
 		}
 
-		function freeNumber( item, sel ) {
-			var taken = item.en.marks.filter( function ( mk ) {
-				// A mark the new one would replace frees its colour.
-				return ! ( mk.start < sel.end && mk.end > sel.start );
-			} ).map( function ( mk ) { return mk.n; } );
+		function freeNumber( item ) {
+			var taken = numbersOf( item.en );
 			for ( var n = 1; n <= MAX_MARKS; n++ ) {
 				if ( taken.indexOf( n ) === -1 ) {
 					return n;
@@ -723,36 +749,53 @@
 			return 0;
 		}
 
-		function addEnMark( item, sel, n ) {
-			dropOverlapping( item.en, sel.start, sel.end ).forEach( function ( gone ) {
-				dropNumber( item.pl, gone );
-			} );
-			dropNumber( item.pl, n );
-			item.en.marks.push( { n: n, start: sel.start, end: sel.end } );
-			afterMarkChange( item, 'en' );
-		}
+		/**
+		 * Turn a word range into a highlight at once, or say why it cannot be one.
+		 *
+		 * As in Drag & Drop, a range touching an existing highlight is refused
+		 * rather than merged: silently swallowing a highlight the teacher made
+		 * is a worse surprise than being told to remove it first.
+		 */
+		function commit( item, sideName, start, end ) {
+			var side = item[ sideName ];
+			var clash = side.marks.some( function ( mk ) { return start < mk.end && mk.start < end; } );
+			var n = 0;
 
-		function setPlMark( item, sel, n ) {
-			dropNumber( item.pl, n );
-			dropOverlapping( item.pl, sel.start, sel.end );
-			item.pl.marks.push( { n: n, start: sel.start, end: sel.end } );
-			afterMarkChange( item, 'pl' );
+			if ( clash ) {
+				item.notice[ sideName ] = t.overlap;
+			} else if ( sideName === 'en' ) {
+				n = freeNumber( item );
+				item.notice.en = n ? '' : t.allColoursUsed;
+			} else if ( ! item.en.marks.length ) {
+				item.notice.pl = t.plNoMarks;
+			} else {
+				n = plTarget( item );
+				item.notice.pl = n ? '' : t.plAllPairedRemove;
+			}
+
+			if ( n && ! clash ) {
+				side.marks.push( { n: n, start: start, end: end } );
+				if ( sideName === 'pl' ) {
+					item.target = null;
+				}
+				refreshRow( item );
+				markDirty();
+				return;
+			}
+			renderTools( item, sideName );
 		}
 
 		function removeMark( item, sideName, n ) {
 			dropNumber( item[ sideName ], n );
 			if ( sideName === 'en' ) {
+				// The Polish partner of a removed English highlight has nothing
+				// left to pair with.
 				dropNumber( item.pl, n );
+			} else {
+				item.target = n;
 			}
-			afterMarkChange( item, sideName );
-		}
-
-		function afterMarkChange( item, sideName ) {
-			item.sel[ sideName ] = null;
-			item.active[ sideName ] = null;
-			if ( window.getSelection ) {
-				window.getSelection().removeAllRanges();
-			}
+			// Either side's warning described the highlights as they were.
+			item.notice = { en: '', pl: '' };
 			refreshRow( item );
 			markDirty();
 		}
@@ -766,52 +809,95 @@
 			return null;
 		}
 
-		/** Clicking a highlight selects it for removal; clicking it again lets go. */
-		function onPreviewClick( e ) {
-			var preview = e.currentTarget;
+		/* ---------- the picker gesture ---------- */
+
+		var drag = null;
+
+		function pickerOf( node ) {
+			var preview = node && node.closest ? node.closest( '.tbtd-preview' ) : null;
+			if ( ! preview || ! list.contains( preview ) ) {
+				return null;
+			}
 			var item = findItem( preview.getAttribute( 'data-key' ) );
-			var sideName = preview.getAttribute( 'data-side' );
-			if ( ! item ) {
-				return;
-			}
-			var sel = window.getSelection ? window.getSelection() : null;
-			if ( sel && ! sel.isCollapsed ) {
-				return;
-			}
-			var mark = e.target.closest( 'mark[data-n]' );
-			var n = mark ? parseInt( mark.getAttribute( 'data-n' ), 10 ) : null;
-			item.active[ sideName ] = n && item.active[ sideName ] !== n ? n : null;
-			item.sel[ sideName ] = null;
-			renderPreview( item, sideName );
-			renderTools( item, sideName );
+			return item ? { item: item, side: preview.getAttribute( 'data-side' ), preview: preview } : null;
 		}
 
-		/**
-		 * Track text selections inside any preview. The stored range outlives
-		 * the browser selection, so pressing the Highlight button — which on
-		 * touch screens can clear the selection first — still knows what to mark.
-		 */
-		document.addEventListener( 'selectionchange', function () {
-			var sel = window.getSelection();
-			if ( ! sel || sel.rangeCount === 0 || sel.isCollapsed ) {
+		function wordAt( x, y, preview ) {
+			var node = document.elementFromPoint( x, y );
+			var word = node && node.closest ? node.closest( '.tbtd-w' ) : null;
+			return word && preview.contains( word ) ? word : null;
+		}
+
+		function paint( preview, from, to ) {
+			var low = Math.min( from, to );
+			var high = Math.max( from, to );
+			preview.querySelectorAll( '.tbtd-w' ).forEach( function ( w ) {
+				var s = parseInt( w.getAttribute( 'data-s' ), 10 );
+				w.classList.toggle( 'is-marking', s >= low && s <= high );
+			} );
+		}
+
+		// Pointer events cover the mouse and a finger alike. The browser's own
+		// text selection is suppressed: here a drag means "highlight these
+		// words", and a blue selection on top would read as something else.
+		list.addEventListener( 'pointerdown', function ( e ) {
+			if ( e.button !== 0 ) {
 				return;
 			}
-			var node = sel.anchorNode;
-			var preview = node && ( node.nodeType === 1 ? node : node.parentElement );
-			preview = preview && preview.closest ? preview.closest( '.tbtd-preview' ) : null;
-			if ( ! preview || ! root.contains( preview ) ) {
+			var word = e.target.closest ? e.target.closest( '.tbtd-w' ) : null;
+			var picker = word ? pickerOf( word ) : null;
+			if ( ! picker || word.closest( 'mark' ) ) {
 				return;
 			}
-			var item = findItem( preview.getAttribute( 'data-key' ) );
-			var sideName = preview.getAttribute( 'data-side' );
-			if ( ! item || ! item[ sideName ].text ) {
+			e.preventDefault();
+			var s = parseInt( word.getAttribute( 'data-s' ), 10 );
+			drag = { picker: picker, anchorStart: s, anchorEnd: parseInt( word.getAttribute( 'data-e' ), 10 ), last: word };
+			paint( picker.preview, s, s );
+		} );
+
+		document.addEventListener( 'pointermove', function ( e ) {
+			if ( ! drag ) {
 				return;
 			}
-			var range = selectionIn( preview );
-			var snapped = range ? snapToWords( item[ sideName ].text, range.start, range.end ) : null;
-			item.sel[ sideName ] = snapped;
-			item.active[ sideName ] = null;
-			renderTools( item, sideName );
+			var word = wordAt( e.clientX, e.clientY, drag.picker.preview );
+			if ( word ) {
+				drag.last = word;
+				paint( drag.picker.preview, drag.anchorStart, parseInt( word.getAttribute( 'data-s' ), 10 ) );
+			}
+		} );
+
+		// On document, not on the picker: a drag that ends outside the sentence
+		// still has to finish, or the picker would stay stuck mid-gesture.
+		document.addEventListener( 'pointerup', function () {
+			if ( ! drag ) {
+				return;
+			}
+			var d = drag;
+			drag = null;
+			var ls = parseInt( d.last.getAttribute( 'data-s' ), 10 );
+			var le = parseInt( d.last.getAttribute( 'data-e' ), 10 );
+			commit( d.picker.item, d.picker.side, Math.min( d.anchorStart, ls ), Math.max( d.anchorEnd, le ) );
+		} );
+
+		document.addEventListener( 'pointercancel', function () {
+			if ( drag ) {
+				drag.picker.preview.querySelectorAll( '.is-marking' ).forEach( function ( w ) { w.classList.remove( 'is-marking' ); } );
+				drag = null;
+			}
+		} );
+
+		// Keyboard: Enter or Space on a word highlights that word.
+		list.addEventListener( 'keydown', function ( e ) {
+			if ( e.key !== 'Enter' && e.key !== ' ' ) {
+				return;
+			}
+			var word = e.target.closest ? e.target.closest( '.tbtd-w' ) : null;
+			var picker = word ? pickerOf( word ) : null;
+			if ( ! picker ) {
+				return;
+			}
+			e.preventDefault();
+			commit( picker.item, picker.side, parseInt( word.getAttribute( 'data-s' ), 10 ), parseInt( word.getAttribute( 'data-e' ), 10 ) );
 		} );
 
 		/* ---------- adding and removing rows ---------- */
@@ -929,8 +1015,8 @@
 							item.pl = pl;
 							item.note = out.note || '';
 							item.src = serialize( item.en );
-							item.sel = { en: null, pl: null };
-							item.active = { en: null, pl: null };
+							item.notice = { en: '', pl: '' };
+							item.target = null;
 							item.dom.plInput.value = pl.text;
 							item.dom.note.value = item.note;
 							item.dom.row.classList.remove( 'is-working' );

@@ -105,14 +105,16 @@ class TBTD_Teacher {
 			'notePlaceholder'  => __( 'Shown under the answer. Use **double asterisks** for bold.', 'translation-drill' ),
 			'enPlaceholder'    => __( 'Type or paste the English sentence…', 'translation-drill' ),
 			'plPlaceholder'    => __( 'Press Translate, or write the Polish yourself…', 'translation-drill' ),
-			'enHint'           => __( 'Select words in the sentence above to highlight them. Up to 4 per sentence.', 'translation-drill' ),
-			'enEmpty'          => __( 'Your sentence appears here. Select words to highlight them.', 'translation-drill' ),
+			'enHint'           => __( 'Click a word to highlight it, or drag across several. Up to 4 per sentence.', 'translation-drill' ),
+			'enEmpty'          => __( 'Your sentence appears here, ready for highlighting.', 'translation-drill' ),
 			'plEmpty'          => __( 'The Polish sentence appears here.', 'translation-drill' ),
-			'highlight'        => __( 'Highlight', 'translation-drill' ),
 			'removeHighlight'  => __( 'Remove highlight', 'translation-drill' ),
-			'allColoursUsed'   => __( 'All four colours are used. Click a highlight to remove it first.', 'translation-drill' ),
-			'plPickColour'     => __( 'This is the Polish for:', 'translation-drill' ),
-			'plSelectFor'      => __( 'Select the Polish words for:', 'translation-drill' ),
+			/* translators: %s: the highlighted words */
+			'removeNamed'      => __( 'Remove the highlight “%s”', 'translation-drill' ),
+			'allColoursUsed'   => __( 'All four colours are used. Remove one with its × to add another.', 'translation-drill' ),
+			'overlap'          => __( 'Those words touch an existing highlight. Remove it first with its ×.', 'translation-drill' ),
+			'plSelectFor'      => __( 'Click or drag the Polish words for:', 'translation-drill' ),
+			'plAllPairedRemove' => __( 'Every highlight already has its Polish partner. Remove one with its × to pair it differently.', 'translation-drill' ),
 			'plAllPaired'      => __( 'Every highlight has its Polish partner.', 'translation-drill' ),
 			'plNoMarks'        => __( 'No highlights in the English, so none are needed here.', 'translation-drill' ),
 			'statusNew'        => __( 'Needs translation', 'translation-drill' ),
@@ -174,7 +176,9 @@ class TBTD_Teacher {
 			return '';
 		}
 
-		$atts = shortcode_atts( array( 'hero' => 'yes' ), is_array( $atts ) ? $atts : array(), self::SHORTCODE );
+		// The hero is off by default: the TBT pages carry their own header row
+		// in Divi. hero="yes" brings the built-in one back for a bare page.
+		$atts = shortcode_atts( array( 'hero' => 'no' ), is_array( $atts ) ? $atts : array(), self::SHORTCODE );
 		$hero = 'yes' === strtolower( trim( (string) $atts['hero'] ) );
 
 		self::enqueue();

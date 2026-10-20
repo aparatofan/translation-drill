@@ -18,7 +18,9 @@
    screen. Doubling the attribute out-ranks every pinned rule here. */
 .tbt [hidden][hidden][hidden] { display: none !important; }
 
-.tbtd-player { max-width: 820px; margin: 0 auto; padding: var(--tbt-s5) 0 var(--tbt-s7); display: flex; flex-direction: column; gap: var(--tbt-s5); }
+/* Width is delegated to the surrounding Divi row, like Swipe and the other
+   TBT tools, so the drill lines up with the page's own header. */
+.tbtd-player { max-width: none; margin: 0 auto; padding: var(--tbt-s5) 0 var(--tbt-s7); display: flex; flex-direction: column; gap: var(--tbt-s5); }
 
 .tbtd-preview-banner {
   background-color: #FFF6E0; border-left: 4px solid var(--tbtd-hl1); color: #6B4700;
