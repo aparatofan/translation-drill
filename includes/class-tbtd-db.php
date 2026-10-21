@@ -167,6 +167,32 @@ class TBTD_DB {
 	}
 
 	/**
+	 * A class's published drills, newest publish first, with sentence counts,
+	 * for the TBT Notes class panel. Published only — enforced here, in SQL,
+	 * so a draft cannot reach a student even if something downstream slips.
+	 *
+	 * @param int $class_id Class.
+	 * @return object[]
+	 */
+	public static function published_drills_for_class( $class_id ) {
+		global $wpdb;
+		$drills = self::drills_table();
+		$items  = self::items_table();
+		return (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT d.*, COUNT(i.id) AS item_count
+				FROM {$drills} d
+				LEFT JOIN {$items} i ON i.drill_id = d.id
+				WHERE d.class_id = %d AND d.status = %s
+				GROUP BY d.id
+				ORDER BY d.published_at DESC, d.id DESC",
+				(int) $class_id,
+				self::STATUS_PUBLISHED
+			)
+		);
+	}
+
+	/**
 	 * Every drill on the site, for the wp-admin oversight list.
 	 *
 	 * @return object[]

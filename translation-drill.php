@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       TBT Translation Drill
  * Description:       Polish → English sentence translation drills for live lessons. The teacher writes English sentences and highlights the key expressions, AI prepares the Polish version with matching highlights and a short language note, the teacher approves it, and logged-in students practise one sentence at a time with hints and a reveal.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            TBT
@@ -12,7 +12,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TBTD_VERSION', '1.1.0' );
+define( 'TBTD_VERSION', '1.2.0' );
 define( 'TBTD_DB_VERSION', '1.0' );
 define( 'TBTD_PLUGIN_FILE', __FILE__ );
 define( 'TBTD_DIR', plugin_dir_path( __FILE__ ) );
@@ -35,6 +35,7 @@ require_once TBTD_DIR . 'includes/class-tbtd-urls.php';
 require_once TBTD_DIR . 'includes/class-tbtd-rest.php';
 require_once TBTD_DIR . 'includes/class-tbtd-teacher.php';
 require_once TBTD_DIR . 'includes/class-tbtd-player.php';
+require_once TBTD_DIR . 'includes/class-tbtd-notes-bridge.php';
 require_once TBTD_DIR . 'includes/class-tbtd-admin.php';
 require_once TBTD_DIR . 'includes/class-tbtd-settings.php';
 
@@ -75,6 +76,7 @@ add_action( 'plugins_loaded', function () {
 	new TBTD_Rest();
 	new TBTD_Teacher();
 	new TBTD_Player();
+	new TBTD_Notes_Bridge();
 
 	if ( is_admin() ) {
 		new TBTD_Admin();
