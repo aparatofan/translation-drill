@@ -384,6 +384,7 @@
 		var savedMsg = $( 'saved-msg' );
 		var warnings = $( 'warnings' );
 		var share = $( 'share' );
+		var anotherRow = $( 'another-row' );
 		var defaultStatus = translateStatus.textContent.trim();
 
 		var state = {
@@ -1199,6 +1200,9 @@
 			}
 
 			share.hidden = ! ( live && state.url );
+			if ( anotherRow ) {
+				anotherRow.hidden = share.hidden;
+			}
 			if ( live && state.url ) {
 				var urlInput = $( 'share-url' );
 				if ( urlInput.value !== state.url ) {
