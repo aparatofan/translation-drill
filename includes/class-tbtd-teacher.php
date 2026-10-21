@@ -560,6 +560,16 @@ class TBTD_Teacher {
 					</div>
 				</div>
 			</section>
+			<?php
+			// Starting the next drill ends the whole flow rather than Stage 3, so the
+			// button sits centred under the stage instead of inside its card. It follows
+			// the share panel's visibility.
+			?>
+			<div class="tbtd-another-row" data-role="another-row" hidden>
+				<a class="tbtd-btn tbtd-btn--primary" href="<?php echo esc_url( TBTD_Urls::new_url() ); ?>">
+					<?php esc_html_e( 'Create another drill', 'translation-drill' ); ?>
+				</a>
+			</div>
 		</div>
 		<?php
 	}

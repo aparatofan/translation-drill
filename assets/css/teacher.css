@@ -59,6 +59,7 @@
 
 /* ---------- Stages ---------- */
 .tbtd-stage { margin-bottom: var(--tbt-s7); }
+.tbtd-another-row { display: flex; justify-content: center; margin: var(--tbt-s6) 0 var(--tbt-s7); }
 .tbtd-stage-card {
   background-color: var(--tbt-surface); border: 1px solid var(--tbt-line);
   border-top: 5px solid var(--tbt-blue); border-radius: var(--tbt-r-xl);
