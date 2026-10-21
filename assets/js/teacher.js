@@ -368,8 +368,12 @@
 		var list = $( 'items' );
 		var titleInput = $( 'title' );
 		var contextInput = $( 'context' );
-		var classSelect = $( 'class' );
+		var classInput = $( 'class' );
+		var classIdField = $( 'class-id' );
+		var classHint = $( 'class-hint' );
+		var classList = root.querySelector( '#tbtd-class-list' );
 		var lessonSelect = $( 'lesson' );
+		var lessonWrap = $( 'lesson-wrap' );
 		var translateBtn = $( 'translate' );
 		var translateStatus = $( 'translate-status' );
 		var saveBtn = $( 'save' );
@@ -1043,26 +1047,102 @@
 
 		/* ---------- class and lesson ---------- */
 
-		if ( classSelect && lessonSelect ) {
-			classSelect.addEventListener( 'change', function () {
-				var classId = parseInt( classSelect.value, 10 ) || 0;
-				lessonSelect.innerHTML = '';
-				lessonSelect.appendChild( el( 'option', { value: '0', text: classId ? t.loadingLessons : t.noLesson } ) );
-				lessonSelect.disabled = true;
-				markDirty();
-				if ( ! classId ) {
+		/**
+		 * The class the typed text stands for.
+		 *
+		 * The datalist hands back a name, so the id it means is looked up here.
+		 * A name that matches nothing resolves to no class — deliberately, so a
+		 * half-typed name can never attach a drill to the wrong class.
+		 *
+		 * @param {string} text What the teacher typed.
+		 * @return {HTMLOptionElement|null} The matching entry, if there is one.
+		 */
+		function classOptionFor( text ) {
+			var wanted = ( text || '' ).trim().toLowerCase();
+			var found = null;
+
+			if ( ! wanted || ! classList ) {
+				return null;
+			}
+
+			classList.querySelectorAll( 'option' ).forEach( function ( option ) {
+				if ( ! found && option.value.trim().toLowerCase() === wanted ) {
+					found = option;
+				}
+			} );
+
+			return found;
+		}
+
+		function setClass( id ) {
+			if ( classIdField ) {
+				classIdField.value = id || '';
+			}
+		}
+
+		/**
+		 * Load a class's lessons: newest first, "Any lesson" last, the newest
+		 * selected. The lesson stays optional, so a class with no lessons keeps
+		 * only "Any lesson" rather than being taken out of play as in Swipe.
+		 *
+		 * @param {string} classId Class ID.
+		 */
+		function attachClass( classId ) {
+			setClass( classId );
+
+			api( 'GET', 'classes/' + encodeURIComponent( classId ) + '/lessons' ).then( function ( lessons ) {
+				// The teacher picked another class while this was in flight.
+				if ( ! classIdField || classIdField.value !== String( classId ) ) {
 					return;
 				}
-				api( 'GET', 'classes/' + classId + '/lessons' ).then( function ( lessons ) {
-					lessonSelect.innerHTML = '';
-					lessonSelect.appendChild( el( 'option', { value: '0', text: t.noLesson } ) );
-					( lessons || [] ).forEach( function ( lesson ) {
-						lessonSelect.appendChild( el( 'option', { value: String( lesson.id ), text: lesson.title } ) );
-					} );
-					lessonSelect.disabled = false;
-				} ).catch( function ( err ) {
-					showError( errorBox, err.message );
+				// The route returns lessons newest first, so option 0 is the
+				// most recent and no sorting happens here.
+				lessonSelect.innerHTML = '';
+				( lessons || [] ).forEach( function ( lesson ) {
+					lessonSelect.appendChild( el( 'option', { value: String( lesson.id ), text: lesson.title } ) );
 				} );
+				lessonSelect.appendChild( el( 'option', { value: '0', text: t.noLesson } ) );
+				lessonSelect.selectedIndex = 0;
+				lessonWrap.hidden = false;
+			} ).catch( function ( err ) {
+				if ( ! classIdField || classIdField.value !== String( classId ) ) {
+					return;
+				}
+				lessonWrap.hidden = true;
+				setClass( '' );
+				showError( errorBox, err.message );
+			} );
+		}
+
+		if ( classInput && lessonSelect && lessonWrap ) {
+			// 'change' rather than 'input': it fires both when a suggestion is
+			// picked and when the field is left, so the lessons load once
+			// instead of on every keystroke.
+			classInput.addEventListener( 'change', function () {
+				var typed = classInput.value.trim();
+				var option = classOptionFor( typed );
+
+				setClass( '' );
+				if ( classHint ) {
+					classHint.hidden = true;
+				}
+				lessonWrap.hidden = true;
+				markDirty();
+
+				if ( ! typed ) {
+					return;
+				}
+
+				if ( ! option ) {
+					// Typed, but not one of this teacher's classes. Say so; the
+					// drill saves unattached unless a class is picked, as in Swipe.
+					if ( classHint ) {
+						classHint.hidden = false;
+					}
+					return;
+				}
+
+				attachClass( option.getAttribute( 'data-id' ) );
 			} );
 			lessonSelect.addEventListener( 'change', markDirty );
 		}
@@ -1134,8 +1214,8 @@
 				id: state.id || 0,
 				title: titleInput.value,
 				context: contextInput.value,
-				class_id: classSelect ? parseInt( classSelect.value, 10 ) || 0 : 0,
-				lesson_id: lessonSelect ? parseInt( lessonSelect.value, 10 ) || 0 : 0,
+				class_id: classIdField ? parseInt( classIdField.value, 10 ) || 0 : 0,
+				lesson_id: ( lessonSelect && lessonWrap && ! lessonWrap.hidden ) ? parseInt( lessonSelect.value, 10 ) || 0 : 0,
 				status: status,
 				items: state.items.filter( function ( item ) {
 					return item.en.text || item.pl.text;

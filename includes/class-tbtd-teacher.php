@@ -156,7 +156,6 @@ class TBTD_Teacher {
 			'networkError'     => __( 'Something went wrong. Check your connection and try again.', 'translation-drill' ),
 			'noPlayerPage'     => __( 'Saved, but an administrator has not chosen the student page yet, so there is no link.', 'translation-drill' ),
 			'noLesson'         => __( 'Any lesson', 'translation-drill' ),
-			'loadingLessons'   => __( 'Loading lessons…', 'translation-drill' ),
 			'saveDraft'        => __( 'Save draft', 'translation-drill' ),
 			'saveChanges'      => __( 'Save changes', 'translation-drill' ),
 			'publish'          => __( 'Approve and publish', 'translation-drill' ),
@@ -401,10 +400,23 @@ class TBTD_Teacher {
 	 * @param array|null $drill Drill payload, or null for a new drill.
 	 */
 	private function render_builder( $drill ) {
-		$classes   = TBTD_Classes::for_teacher( get_current_user_id() );
-		$class_id  = $drill ? (int) $drill['class_id'] : 0;
-		$lessons   = $class_id ? TBTD_Classes::lessons_for_class( $class_id ) : array();
-		$lesson_id = $drill ? (int) $drill['lesson_id'] : 0;
+		$classes     = TBTD_Classes::for_teacher( get_current_user_id() );
+		$class_id    = $drill ? (int) $drill['class_id'] : 0;
+		$class_title = '';
+		// The field shows a name, the drill stores an id. A saved class this
+		// teacher no longer owns resolves to no class, as the select did.
+		foreach ( $classes as $class ) {
+			if ( (int) $class['id'] === $class_id ) {
+				$class_title = (string) ( $class['title'] ?? '' );
+				break;
+			}
+		}
+		if ( '' === $class_title ) {
+			$class_id = 0;
+		}
+		$lessons      = $class_id ? TBTD_Classes::lessons_for_class( $class_id ) : array();
+		$lesson_id    = $drill ? (int) $drill['lesson_id'] : 0;
+		$lesson_known = $lesson_id > 0 && in_array( $lesson_id, array_map( 'intval', array_column( $lessons, 'id' ) ), true );
 		$max       = TBTD_Translator::max_sentences();
 		?>
 		<?php $this->render_backlink(); ?>
@@ -432,20 +444,46 @@ class TBTD_Teacher {
 						<div class="tbtd-pair">
 							<div class="tbtd-field">
 								<label class="tbtd-label" for="tbtd-class"><?php esc_html_e( 'Class', 'translation-drill' ); ?></label>
-								<select class="tbtd-select" id="tbtd-class" data-role="class">
-									<option value="0"><?php esc_html_e( 'No class', 'translation-drill' ); ?></option>
+								<?php
+								/*
+								 * A text field bound to a datalist rather than a select,
+								 * as in Swipe: a teacher with thirty classes types two
+								 * letters and the list narrows. The datalist hands back
+								 * the class name, so teacher.js resolves the id it stands
+								 * for and parks it in the hidden field the save reads.
+								 */
+								?>
+								<input type="text" class="tbtd-input" id="tbtd-class" data-role="class"
+									list="tbtd-class-list" autocomplete="off" spellcheck="false"
+									placeholder="<?php esc_attr_e( 'No class — type to filter', 'translation-drill' ); ?>"
+									value="<?php echo esc_attr( $class_title ); ?>">
+								<datalist id="tbtd-class-list">
 									<?php foreach ( $classes as $class ) : ?>
-										<option value="<?php echo (int) $class['id']; ?>" <?php selected( (int) $class['id'], $class_id ); ?>><?php echo esc_html( (string) ( $class['title'] ?? '' ) ); ?></option>
+										<option value="<?php echo esc_attr( (string) ( $class['title'] ?? '' ) ); ?>"
+											data-id="<?php echo (int) $class['id']; ?>"></option>
 									<?php endforeach; ?>
-								</select>
+								</datalist>
+								<input type="hidden" data-role="class-id" value="<?php echo $class_id ? (int) $class_id : ''; ?>">
+								<p class="tbtd-help" data-role="class-hint" hidden>
+									<strong><?php esc_html_e( 'No class matches that. Pick one from the list, or clear the field to save without a class.', 'translation-drill' ); ?></strong>
+								</p>
 							</div>
-							<div class="tbtd-field">
+							<?php
+							/*
+							 * Newest lesson first, "Any lesson" last. Unlike Swipe the
+							 * lesson stays optional, so a drill saved with "Any lesson"
+							 * keeps it. A saved lesson the class no longer has falls
+							 * back to "Any lesson", never to the newest: opening a drill
+							 * must not re-anchor it on its own.
+							 */
+							?>
+							<div class="tbtd-field" data-role="lesson-wrap" <?php echo $class_id ? '' : 'hidden'; ?>>
 								<label class="tbtd-label" for="tbtd-lesson"><?php esc_html_e( 'Lesson', 'translation-drill' ); ?></label>
-								<select class="tbtd-select" id="tbtd-lesson" data-role="lesson" <?php disabled( 0 === $class_id ); ?>>
-									<option value="0"><?php esc_html_e( 'Any lesson', 'translation-drill' ); ?></option>
+								<select class="tbtd-select" id="tbtd-lesson" data-role="lesson">
 									<?php foreach ( $lessons as $lesson ) : ?>
 										<option value="<?php echo (int) $lesson['id']; ?>" <?php selected( (int) $lesson['id'], $lesson_id ); ?>><?php echo esc_html( (string) ( $lesson['header'] ?? '' ) ); ?></option>
 									<?php endforeach; ?>
+									<option value="0" <?php selected( $lesson_known, false ); ?>><?php esc_html_e( 'Any lesson', 'translation-drill' ); ?></option>
 								</select>
 							</div>
 						</div>
