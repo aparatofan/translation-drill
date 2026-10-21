@@ -6,14 +6,61 @@
  * (first letters only) and a tap reveals each one; Show answer gives the
  * full English with the same colours and the teacher's note.
  *
- * Nothing is scored or sent anywhere. Typed attempts live in memory only,
- * and the last sentence reached is remembered per drill in this browser.
+ * Nothing is scored. When TBT Notes is present, one completion per page load
+ * is reported to its Class Progress panel, with a heartbeat while the student
+ * works. Typed attempts still live in memory only, and the last sentence
+ * reached is remembered per drill in this browser.
  */
 ( function () {
 	'use strict';
 
 	var cfg = window.tbtdPlayer || {};
 	var t = cfg.i18n || {};
+
+	/* Reporting to TBT Notes, as in Drag & Drop. The endpoint and nonce are
+	   localised only when Notes is active and the viewer is logged in; the
+	   per-drill `activity` block is printed only for a student on a published
+	   drill. Missing either one, nothing is sent. */
+	var PRESENCE_EVERY = 20000;
+	var presenceTimer = null;
+	var activity = null;
+
+	function postActivity( path, body ) {
+		if ( ! cfg.activityBase || ! cfg.activityNonce || ! activity ) {
+			return;
+		}
+
+		// A side effect of practising, never a gate on it: failures are swallowed.
+		fetch( cfg.activityBase + path, {
+			method: 'POST',
+			credentials: 'same-origin',
+			cache: 'no-store',
+			headers: {
+				'Content-Type': 'application/json',
+				'X-WP-Nonce': cfg.activityNonce
+			},
+			body: JSON.stringify( body || {} ),
+			// A student who closes the tab right after finishing is still recorded.
+			keepalive: true
+		} ).catch( function () {} );
+	}
+
+	function startPresence() {
+		if ( presenceTimer || ! cfg.activityBase || ! activity ) {
+			return;
+		}
+		postActivity( '/presence', {} );
+		presenceTimer = window.setInterval( function () {
+			postActivity( '/presence', {} );
+		}, PRESENCE_EVERY );
+	}
+
+	function stopPresence() {
+		if ( presenceTimer ) {
+			window.clearInterval( presenceTimer );
+			presenceTimer = null;
+		}
+	}
 
 	function fmt( str ) {
 		var args = Array.prototype.slice.call( arguments, 1 );
@@ -83,6 +130,37 @@
 		} );
 		var i = 0;
 
+		activity = data.activity || null;
+		// startedAt is set on the first student action, not on page load, so a
+		// student who only opens the link is not shown as working. completionSent
+		// holds for the page load: going round again does not report twice.
+		var startedAt = null;
+		var completionSent = false;
+
+		function noteInteraction() {
+			if ( completionSent ) {
+				return;
+			}
+			if ( ! startedAt ) {
+				startedAt = Date.now();
+			}
+			startPresence();
+		}
+
+		function reportCompletion() {
+			if ( completionSent || ! activity ) {
+				return;
+			}
+			completionSent = true;
+			stopPresence();
+			postActivity( '', {
+				tool: 'drill',
+				object_ref: activity.objectRef,
+				object_title: activity.objectTitle,
+				duration_seconds: startedAt ? Math.max( 0, Math.round( ( Date.now() - startedAt ) / 1000 ) ) : null
+			} );
+		}
+
 		try {
 			var saved = parseInt( window.localStorage.getItem( storeKey ), 10 );
 			if ( saved >= 0 && saved < items.length ) {
@@ -97,6 +175,7 @@
 		track.addEventListener( 'click', function ( e ) {
 			var b = e.target.closest( 'button' );
 			if ( b ) {
+				noteInteraction();
 				go( parseInt( b.getAttribute( 'data-k' ), 10 ) );
 			}
 		} );
@@ -175,6 +254,10 @@
 			if ( k < 0 ) {
 				return;
 			}
+			// Next (or →) on the last sentence finishes the drill.
+			if ( i === items.length - 1 && k === items.length ) {
+				reportCompletion();
+			}
 			i = k % items.length;
 			try {
 				window.localStorage.setItem( storeKey, String( i ) );
@@ -192,11 +275,12 @@
 			render( 'answer' );
 		}
 
-		$( 'hint-btn' ).addEventListener( 'click', toggleHint );
-		$( 'answer-btn' ).addEventListener( 'click', toggleAnswer );
-		$( 'prev' ).addEventListener( 'click', function () { go( i - 1 ); } );
-		$( 'next' ).addEventListener( 'click', function () { go( i + 1 ); } );
+		$( 'hint-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleHint(); } );
+		$( 'answer-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleAnswer(); } );
+		$( 'prev' ).addEventListener( 'click', function () { noteInteraction(); go( i - 1 ); } );
+		$( 'next' ).addEventListener( 'click', function () { noteInteraction(); go( i + 1 ); } );
 		$( 'attempt' ).addEventListener( 'input', function ( e ) {
+			noteInteraction();
 			state[ i ].draft = e.target.value;
 			renderYours();
 		} );
@@ -205,6 +289,7 @@
 			if ( ! b ) {
 				return;
 			}
+			noteInteraction();
 			var n = b.getAttribute( 'data-n' );
 			state[ i ].open[ n ] = ! state[ i ].open[ n ];
 			render();
@@ -218,13 +303,17 @@
 			var k = e.key.toLowerCase();
 			if ( k === 'arrowright' ) {
 				e.preventDefault();
+				noteInteraction();
 				go( i + 1 );
 			} else if ( k === 'arrowleft' ) {
 				e.preventDefault();
+				noteInteraction();
 				go( i - 1 );
 			} else if ( k === 'h' ) {
+				noteInteraction();
 				toggleHint();
 			} else if ( k === 'a' ) {
+				noteInteraction();
 				toggleAnswer();
 			}
 		} );

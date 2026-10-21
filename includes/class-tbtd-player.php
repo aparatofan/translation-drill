@@ -62,10 +62,21 @@ class TBTD_Player {
 		wp_enqueue_style( 'tbtd-tokens', TBTD_URL . 'assets/css/tbt-tokens.css', array(), TBTD_VERSION );
 		wp_enqueue_style( 'tbtd-player', TBTD_URL . 'assets/css/player.css', array( 'tbtd-tokens' ), TBTD_VERSION );
 		wp_enqueue_script( 'tbtd-player', TBTD_URL . 'assets/js/player.js', array(), TBTD_VERSION, true );
+
+		// Completion and presence go to TBT Notes' Class Progress when Notes is
+		// active. Without these keys the player reports nothing.
+		$activity = array();
+		if ( is_user_logged_in() && class_exists( 'TBT_Notes_Activity_REST' ) && defined( 'TBT_NOTES_REST_NAMESPACE' ) ) {
+			$activity = array(
+				'activityBase'  => esc_url_raw( rest_url( TBT_NOTES_REST_NAMESPACE . '/activity' ) ),
+				'activityNonce' => wp_create_nonce( 'wp_rest' ),
+			);
+		}
+
 		wp_localize_script(
 			'tbtd-player',
 			'tbtdPlayer',
-			array(
+			$activity + array(
 				'i18n' => array(
 					/* translators: 1: current sentence, 2: total */
 					'count'      => __( 'Sentence %1$d of %2$d', 'translation-drill' ),
@@ -166,6 +177,15 @@ class TBTD_Player {
 		);
 
 		$is_draft = TBTD_DB::STATUS_DRAFT === $drill->status;
+
+		// Only students on a published drill report. The owner (or an admin)
+		// screen-sharing a drill must not show up in Class Progress.
+		if ( TBTD_DB::STATUS_PUBLISHED === $drill->status && ! $is_owner ) {
+			$data['activity'] = array(
+				'objectRef'   => (string) $drill->id,
+				'objectTitle' => (string) $drill->title,
+			);
+		}
 
 		ob_start();
 		?>
