@@ -135,6 +135,17 @@
 .tbt .tbtd-btn--ghost.tbtd-btn--fill:hover:not([disabled]) { background-color: var(--tbt-blue-deep) !important; border-color: var(--tbt-blue-deep) !important; color: #FFFFFF !important; }
 .tbt .tbtd-btn--danger { color: var(--tbt-maroon) !important; }
 .tbt .tbtd-btn--danger:hover:not([disabled]) { border-color: var(--tbt-maroon) !important; background-color: #FAF0F0 !important; }
+
+/* The library's Create button: the Admin Bar's fixed 250 × 53 pill, no
+   shadow. Label, case and colour stay the primary pill's. */
+.tbt .tbtd-btn.tbtd-library-cta,
+.tbt .tbtd-btn.tbtd-library-cta:hover {
+  flex: 0 0 250px;
+  width: 250px !important; max-width: 250px !important;
+  min-height: 53px !important;
+  padding: 0 16px !important;
+  box-shadow: none !important;
+}
 .tbt .tbtd-linkbtn {
   display: inline; padding: 0 !important; border: 0 !important; background: none !important;
   font: inherit; font-size: 15px; font-weight: 600; color: var(--tbt-blue) !important;
@@ -151,9 +162,59 @@
 .tbtd-notice--warn { background-color: var(--tbtd-warn-bg); border-left: 4px solid var(--tbtd-hl1); color: var(--tbtd-warn); }
 
 /* ---------- Library ---------- */
-.tbtd-library-head { display: flex; align-items: center; gap: var(--tbt-s4); flex-wrap: wrap; margin-bottom: var(--tbt-s5); }
+/* Admin Bar (from TBT Swipe 1.16.1) — one row joined by a thin line:
+   title ─ search ─ class ─ button, 10px either side of each item. Fixed
+   widths (300 / 300 / 250) so the bar reads the same on every tool; the
+   lines take what is left. */
+.tbtd-library-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: var(--tbt-s5); }
+/* The title zone is at least 234px, so the search always starts 244px in. */
+.tbtd-library-head .tbtd-section-head { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; min-width: 234px; margin-bottom: 0; }
 .tbt .tbtd-section-title { font-family: var(--tbt-display) !important; font-size: 28px !important; font-weight: 700; color: var(--tbt-blue) !important; letter-spacing: -.01em; margin: 0 !important; padding: 0 !important; }
-.tbtd-library-line { flex: 1 1 40px; min-width: 0; height: 1px; background-color: var(--tbt-line); }
+.tbtd-library-line { flex: 1 1 0; min-width: 0; height: 1px; background-color: var(--tbt-line); }
+/* No drills: the title's line runs to the button on its own. */
+.tbtd-library-head:not(.tbtd-library-head--filter) .tbtd-section-head { flex: 1 1 auto; }
+/* The filter group grows by the same share as the end line, so both gaps stay equal. */
+.tbtd-filter { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.tbtd-filter-search { position: relative; flex: 0 0 300px; min-width: 0; }
+.tbtd-filter-icon { position: absolute; left: var(--tbt-s4); top: 50%; transform: translateY(-50%); color: var(--tbt-blue); pointer-events: none; }
+/* .tbt .tbtd-input pins its padding, so this pins too, more specifically,
+   to make room for the icon and the clear button. */
+.tbt .tbtd-filter-search .tbtd-input { padding-left: 46px !important; padding-right: 44px !important; -webkit-appearance: none; appearance: none; }
+.tbt .tbtd-filter-search .tbtd-input::-webkit-search-cancel-button,
+.tbt .tbtd-filter-search .tbtd-input::-webkit-search-decoration { -webkit-appearance: none; display: none; }
+.tbt .tbtd-filter-clear {
+  position: absolute; right: var(--tbt-s2); top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; min-height: 0; padding: 0; margin: 0; border: 0; border-radius: var(--tbt-r-sm);
+  background: transparent; color: var(--tbt-ink-soft); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.tbt .tbtd-filter-clear:hover { background: var(--tbt-blue-wash); color: var(--tbt-blue); }
+.tbt .tbtd-filter-clear:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--tbt-surface), 0 0 0 4px var(--tbt-blue); }
+.tbt .tbtd-filter-class { flex: 0 0 300px; min-width: 0 !important; width: 300px !important; }
+/* A chosen class reads as a selection: blue border, pale blue surface. */
+.tbt .tbtd-filter-class.is-set { border-color: var(--tbt-blue) !important; background-color: var(--tbt-blue-wash) !important; }
+.tbt .tbtd-filter-summary { font-size: 15px; color: var(--tbt-ink-soft); margin: calc(-1 * var(--tbt-s2)) 0 var(--tbt-s5) !important; padding: 0 !important; }
+.tbt .tbtd-filter-link {
+  display: inline; border: 0; background: none; padding: 0; margin-left: var(--tbt-s2); cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--tbt-blue) !important;
+  text-decoration: underline !important; text-underline-offset: 3px;
+}
+.tbt .tbtd-filter-link:focus-visible { outline: 2px solid var(--tbt-blue); outline-offset: 2px; border-radius: 2px; }
+/* Match highlight. Pinned because Divi and browsers both style <mark>. */
+.tbt .tbtd-hit {
+  background-color: var(--tbt-blue-wash) !important; color: inherit !important;
+  border-radius: 3px; padding: 0 1px; box-shadow: inset 0 0 0 1px var(--tbt-periwinkle);
+}
+/* Inside a filled chip the wash would look like a hole; a light tint of the chip instead. */
+.tbt .tbtd-chip .tbtd-hit { background-color: rgba(255,255,255,.28) !important; box-shadow: none; }
+.tbtd-sr { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* The sentence that kept a row in the results. Learning content, so Roboto
+   Slab; pinned because Divi's p rules outrank a bare class. */
+.tbt .tbtd-hit-line {
+  margin: var(--tbt-s2) 0 0 !important; padding: 0 !important;
+  font-family: var(--tbt-display) !important; font-size: 15px !important; line-height: 1.5 !important; color: var(--tbt-ink-soft) !important;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tbtd-hit-more { font-family: var(--tbt-body); font-size: 14px; font-weight: 600; margin-left: var(--tbt-s2); }
 .tbtd-group { margin-bottom: var(--tbt-s6); }
 .tbtd-group-head { display: flex; align-items: baseline; gap: var(--tbt-s3); margin-bottom: var(--tbt-s4); }
 .tbt .tbtd-group-name { font-family: var(--tbt-display) !important; font-size: 19px !important; font-weight: 600; color: var(--tbt-ink) !important; margin: 0 !important; padding: 0 !important; }
@@ -356,6 +417,14 @@ mark .tbtd-w:hover { background-color: transparent; box-shadow: none; }
 }
 
 /* ---------- Responsive ---------- */
+@media (max-width: 1100px) {
+  /* Too narrow for the joined row: title and button share line one, search
+     and class take line two, and the lines step aside. */
+  .tbtd-library-line { display: none; }
+  .tbtd-library-head .tbtd-section-head { flex: 1 1 auto; min-width: 0; }
+  .tbtd-library-head--filter .tbtd-filter { order: 3; flex-basis: 100%; }
+  .tbtd-filter-search { flex: 1 1 auto; }
+}
 @media (max-width: 920px) {
   .tbtd-item { grid-template-columns: minmax(0,1fr); }
   .tbtd-share { grid-template-columns: 1fr; justify-items: start; }
@@ -368,7 +437,10 @@ mark .tbtd-w:hover { background-color: transparent; box-shadow: none; }
   .tbtd-pair { grid-template-columns: 1fr; }
   .tbtd-drill-actions { width: 100%; }
   .tbt .tbtd-btn--primary, .tbt .tbtd-btn--soft { width: 100% !important; padding-left: var(--tbt-s4) !important; padding-right: var(--tbt-s4) !important; }
-  .tbtd-library-line { display: none; }
-  .tbt .tbtd-library-head .tbtd-btn--primary { width: 100% !important; }
+  .tbtd-filter { flex-wrap: wrap; }
+  .tbt .tbtd-filter-class { flex-basis: 100%; width: 100% !important; }
+  /* The fixed 250px is a desktop rule; on phones Create stays full width
+     like the page's other actions. */
+  .tbt .tbtd-btn.tbtd-library-cta { width: 100% !important; max-width: 100% !important; flex-basis: auto; }
   .tbtd-preview { font-size: 17px; }
 }

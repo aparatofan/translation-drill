@@ -2,7 +2,7 @@
  * TBT Translation Drill — teacher page.
  *
  * Two independent parts, each starting only if its markup is on the page:
- *   - the library: delete, copy link, QR code
+ *   - the library: search and class filter, delete, copy link, QR code
  *   - the builder: sentence rows with a select-to-highlight editor for the
  *     English and the Polish, AI translation, save / publish / share
  *
@@ -301,14 +301,17 @@
 	function initLibrary( root ) {
 		var errorBox = root.querySelector( '[data-role="error"]' );
 		var modal = document.querySelector( '[data-role="qr-modal"]' );
+		var filter = initFilter( root, modal );
 
+		/* Rows and groups are found by their behavioural attributes, never by
+		   the class names the design owns. */
 		root.addEventListener( 'click', function ( e ) {
 			var btn = e.target.closest( 'button[data-role]' );
 			if ( ! btn ) {
 				return;
 			}
 			var role = btn.getAttribute( 'data-role' );
-			var row = btn.closest( '.tbtd-drill' );
+			var row = btn.closest( '[data-id]' );
 
 			if ( role === 'copy' ) {
 				copyText( btn.getAttribute( 'data-url' ), btn );
@@ -317,16 +320,25 @@
 				drawQr( modal.querySelector( '[data-role="qr-target"]' ), btn.getAttribute( 'data-url' ) );
 				modal.hidden = false;
 				modal.querySelector( '[data-role="qr-close"]' ).focus();
+			} else if ( role === 'filter-clear' && filter ) {
+				filter.clearSearch();
+			} else if ( role === 'filter-reset' && filter ) {
+				filter.reset();
 			} else if ( role === 'delete' && row ) {
 				if ( ! window.confirm( t.confirmDelete ) ) {
 					return;
 				}
 				btn.disabled = true;
 				api( 'DELETE', 'drills/' + row.getAttribute( 'data-id' ) ).then( function () {
-					var group = row.closest( '.tbtd-group' );
+					var group = row.closest( '[data-role="group"]' );
 					row.remove();
-					if ( group && ! group.querySelector( '.tbtd-drill' ) ) {
+					if ( group && ! group.querySelector( '[data-id]' ) ) {
 						group.remove();
+					}
+					// Counts, the summary and the class dropdown are all
+					// counting rows that no longer exist.
+					if ( filter ) {
+						filter.refresh();
 					}
 				} ).catch( function ( err ) {
 					btn.disabled = false;
@@ -348,6 +360,403 @@
 				}
 			} );
 		}
+	}
+
+	/* ------------------------------------------------------------------ *
+	 * Library filter — ported from TBT Swipe's Admin Bar, plus a search
+	 * through the sentences themselves.
+	 * ------------------------------------------------------------------ */
+
+	var FILTER_Q_PARAM = 'tbtd_q';
+	var FILTER_CLASS_PARAM = 'tbtd_class';
+	var HIT_MAX = 90;
+
+	/**
+	 * Case- and diacritic-insensitive: "malas" finds "Małas", "sroda" finds
+	 * "Środa". ł does not decompose under NFD, so it is mapped by hand.
+	 */
+	function fold( value ) {
+		return String( value || '' ).replace( /[łŁ]/g, 'l' ).normalize( 'NFD' ).replace( /[̀-ͯ]/g, '' ).toLowerCase();
+	}
+
+	function roleIn( scope, name ) {
+		return scope.querySelector( '[data-role="' + name + '"]' );
+	}
+
+	function plural( n ) {
+		return 1 === n ? t.itemOne : t.itemMany;
+	}
+
+	/**
+	 * Show the match inside a piece of text, and nothing else. Built out of
+	 * nodes, never innerHTML: the text is something the teacher typed.
+	 *
+	 * @param {Element} node Element to rewrite.
+	 * @param {string}  text Source text from a data attribute — the element's
+	 *                       own text may already hold a mark.
+	 * @param {string}  q    Folded query, or '' to strip the marks.
+	 */
+	function highlight( node, text, q ) {
+		if ( ! node ) {
+			return;
+		}
+		var folded = fold( text );
+		var at = q ? folded.indexOf( q ) : -1;
+
+		/* fold() keeps length for the Polish letters. If some other character
+		   changed it the indices no longer line up, so skip the mark rather
+		   than highlight the wrong letters. */
+		if ( -1 === at || folded.length !== text.length ) {
+			if ( node.firstElementChild || node.textContent !== text ) {
+				node.textContent = text;
+			}
+			return;
+		}
+
+		node.textContent = '';
+		node.appendChild( document.createTextNode( text.slice( 0, at ) ) );
+		node.appendChild( el( 'mark', { className: 'tbtd-hit', text: text.slice( at, at + q.length ) } ) );
+		node.appendChild( document.createTextNode( text.slice( at + q.length ) ) );
+	}
+
+	/**
+	 * The line under a row that matched only through its sentences: the first
+	 * matching sentence in quotes, trimmed around the match, "+N more".
+	 *
+	 * @param {Element}       line The row's [data-role=item-hit].
+	 * @param {Object}        data Cached row data.
+	 * @param {number[]|null} hits Indexes of matching sentences, or null to clear.
+	 * @param {string}        q    Folded query.
+	 */
+	function fillHitLine( line, data, hits, q ) {
+		if ( ! line ) {
+			return;
+		}
+		if ( ! hits || ! hits.length ) {
+			if ( ! line.hidden || line.firstChild ) {
+				line.textContent = '';
+				line.hidden = true;
+			}
+			return;
+		}
+
+		var i = hits[ 0 ];
+		var side = -1 !== data.folded[ i ][ 0 ].indexOf( q ) ? 0 : 1;
+		var text = data.pairs[ i ][ side ];
+		var folded = data.folded[ i ][ side ];
+		var at = folded.indexOf( q );
+		var aligned = folded.length === text.length;
+		var start = 0;
+		var end = text.length;
+
+		if ( text.length > HIT_MAX ) {
+			// Centre the match in the window, then pull the window back
+			// inside the sentence.
+			start = Math.max( 0, at - Math.floor( Math.max( 0, HIT_MAX - q.length ) / 2 ) );
+			end = Math.min( text.length, start + HIT_MAX );
+			start = Math.max( 0, Math.min( start, end - HIT_MAX ) );
+			end = Math.min( text.length, Math.max( end, at + q.length ) );
+		}
+
+		var lead = start > 0 ? '…' : '';
+		var tail = end < text.length ? '…' : '';
+		var quote = String( t.hitQuote || '“%1$s”' ).split( '%1$s' );
+
+		line.textContent = '';
+		if ( aligned ) {
+			line.appendChild( document.createTextNode( quote[ 0 ] + lead + text.slice( start, at ).replace( /^\s+/, lead ? '' : '$&' ) ) );
+			line.appendChild( el( 'mark', { className: 'tbtd-hit', text: text.slice( at, at + q.length ) } ) );
+			line.appendChild( document.createTextNode( text.slice( at + q.length, end ).replace( /\s+$/, tail ? '' : '$&' ) + tail + ( quote[ 1 ] || '' ) ) );
+		} else {
+			line.appendChild( document.createTextNode( quote[ 0 ] + lead + text.slice( start, end ).trim() + tail + ( quote[ 1 ] || '' ) ) );
+		}
+		if ( hits.length > 1 ) {
+			line.appendChild( el( 'span', { className: 'tbtd-hit-more', text: fmt( t.hitMore, hits.length - 1 ) } ) );
+		}
+		line.hidden = false;
+	}
+
+	/**
+	 * @return {Object|null} { refresh, clearSearch, reset }, or null when the
+	 *                       library has no filter (no drills on load).
+	 */
+	function initFilter( root, modal ) {
+		var input = roleIn( root, 'filter-q' );
+		if ( ! input ) {
+			return null;
+		}
+		var head = roleIn( root, 'library-head' );
+		var bar = roleIn( root, 'filter' );
+		var endLine = roleIn( root, 'filter-end' );
+		var classSelect = roleIn( root, 'filter-class' );
+		var clearBtn = roleIn( root, 'filter-clear' );
+		var summary = roleIn( root, 'filter-summary' );
+		var summaryText = roleIn( root, 'filter-summary-text' );
+		var filterEmpty = roleIn( root, 'filter-empty' );
+		var libraryEmpty = roleIn( root, 'library-empty' );
+		var cache = new WeakMap();
+		var typing = null;
+
+		/* Parsed and folded once per row, never per keystroke. A deleted row
+		   takes its entry with it. */
+		function rowData( row ) {
+			var data = cache.get( row );
+			if ( data ) {
+				return data;
+			}
+			var pairs = [];
+			try {
+				pairs = JSON.parse( row.getAttribute( 'data-search-items' ) || '[]' );
+			} catch ( e ) {}
+			if ( ! Array.isArray( pairs ) ) {
+				pairs = [];
+			}
+			pairs = pairs.map( function ( p ) {
+				return [ String( ( p && p[ 0 ] ) || '' ), String( ( p && p[ 1 ] ) || '' ) ];
+			} );
+			data = {
+				title: row.getAttribute( 'data-search-title' ) || '',
+				label: row.getAttribute( 'data-search-label' ) || '',
+				chip: row.getAttribute( 'data-search-chip' ) || '',
+				pairs: pairs,
+				folded: pairs.map( function ( p ) { return [ fold( p[ 0 ] ), fold( p[ 1 ] ) ]; } )
+			};
+			data.foldedName = fold( data.title ) + '\n' + fold( data.label ) + '\n' + fold( data.chip );
+			cache.set( row, data );
+			return data;
+		}
+
+		function applyFilter() {
+			var q = fold( input.value.trim() );
+			var cls = classSelect ? classSelect.value : '';
+			var active = !! ( q || cls );
+			var sections = root.querySelectorAll( '[data-filter-group]' );
+			var total = 0;
+			var shown = 0;
+
+			Array.prototype.forEach.call( sections, function ( section ) {
+				var inClass = ! cls || cls === section.getAttribute( 'data-filter-group' );
+				/* Only a real class has a searchable name. "Drafts" and "No
+				   class" are the plugin's own words. */
+				var groupName = section.getAttribute( 'data-filter-name' ) || '';
+				var foldedGroup = fold( groupName );
+				var rows = section.querySelectorAll( '[data-id]' );
+				var visible = 0;
+
+				Array.prototype.forEach.call( rows, function ( row ) {
+					var data = rowData( row );
+					var nameHit = false;
+					var hits = [];
+					var match = inClass;
+
+					if ( match && q ) {
+						nameHit = -1 !== ( data.foldedName + '\n' + foldedGroup ).indexOf( q );
+						if ( ! nameHit ) {
+							data.folded.forEach( function ( f, i ) {
+								if ( -1 !== f[ 0 ].indexOf( q ) || -1 !== f[ 1 ].indexOf( q ) ) {
+									hits.push( i );
+								}
+							} );
+						}
+						match = nameHit || hits.length > 0;
+					}
+
+					row.hidden = ! match;
+					if ( match ) {
+						visible++;
+					}
+
+					highlight( roleIn( row, 'item-title' ), data.title, match ? q : '' );
+					if ( '' !== data.label ) {
+						highlight( roleIn( row, 'item-label' ), data.label, match ? q : '' );
+					}
+					if ( '' !== data.chip ) {
+						highlight( roleIn( row, 'item-chip' ), data.chip, match ? q : '' );
+					}
+					fillHitLine( roleIn( row, 'item-hit' ), data, match && q && ! nameHit ? hits : null, q );
+				} );
+
+				if ( '' !== groupName ) {
+					highlight( roleIn( section, 'group-name' ), groupName, visible ? q : '' );
+				}
+
+				section.hidden = 0 === visible;
+				shown += visible;
+				total += rows.length;
+
+				var count = roleIn( section, 'group-count' );
+				if ( count ) {
+					count.textContent = active && visible !== rows.length
+						? fmt( t.filterOf, visible, rows.length, plural( rows.length ) )
+						: fmt( t.filterAll, rows.length, plural( rows.length ) );
+				}
+			} );
+
+			if ( clearBtn ) {
+				clearBtn.hidden = ! input.value;
+			}
+			if ( classSelect ) {
+				classSelect.classList.toggle( 'is-set', !! cls );
+			}
+			if ( summary ) {
+				summary.hidden = ! ( active && shown > 0 );
+				if ( ! summary.hidden && summaryText ) {
+					summaryText.textContent = fmt( t.filterShowing, shown, total, plural( total ) );
+				}
+			}
+			if ( filterEmpty ) {
+				filterEmpty.hidden = ! ( active && 0 === shown );
+			}
+
+			writeUrl();
+		}
+
+		/* A class whose last drill was deleted keeps an option that can only
+		   ever show nothing, so the option goes with the group. */
+		function refreshOptions() {
+			if ( ! classSelect ) {
+				return;
+			}
+			var options = classSelect.options;
+			for ( var i = options.length - 1; i >= 0; i-- ) {
+				var option = options[ i ];
+				var value = option.value;
+				if ( '' === value ) {
+					continue;
+				}
+				var n = root.querySelectorAll( '[data-filter-group="' + value + '"] [data-id]' ).length;
+				if ( 0 === n ) {
+					if ( classSelect.value === value ) {
+						classSelect.value = '';
+					}
+					option.remove();
+					continue;
+				}
+				option.textContent = fmt( t.optionLabel, option.getAttribute( 'data-name' ), n );
+			}
+		}
+
+		function refresh() {
+			refreshOptions();
+			applyFilter();
+
+			// The last drill is gone: back to the empty library, no reload.
+			if ( ! root.querySelector( '[data-id]' ) ) {
+				if ( head ) {
+					head.classList.remove( 'tbtd-library-head--filter' );
+				}
+				[ bar, endLine, summary, filterEmpty ].forEach( function ( node ) {
+					if ( node ) {
+						node.hidden = true;
+					}
+				} );
+				if ( libraryEmpty ) {
+					libraryEmpty.hidden = false;
+				}
+			}
+		}
+
+		function clearSearch() {
+			input.value = '';
+			applyFilter();
+			input.focus();
+		}
+
+		function reset() {
+			input.value = '';
+			if ( classSelect ) {
+				classSelect.value = '';
+			}
+			applyFilter();
+			input.focus();
+		}
+
+		function hasOption( value ) {
+			return Array.prototype.some.call( classSelect.options, function ( o ) { return o.value === value; } );
+		}
+
+		function readUrl() {
+			try {
+				var params = new URLSearchParams( window.location.search );
+				var q = params.get( FILTER_Q_PARAM );
+				var cls = params.get( FILTER_CLASS_PARAM );
+				if ( q ) {
+					input.value = q;
+				}
+				// Only a class still on the page: a value no option carries
+				// would silently select the first.
+				if ( cls && classSelect && hasOption( cls ) ) {
+					classSelect.value = cls;
+				}
+			} catch ( e ) {}
+		}
+
+		/* replaceState, never pushState: typing must not leave one history
+		   entry per keystroke. Edit → Back lands on the same filtered view. */
+		function writeUrl() {
+			if ( ! window.history || ! window.history.replaceState ) {
+				return;
+			}
+			try {
+				var url = new URL( window.location.href );
+				var q = input.value.trim();
+				var cls = classSelect ? classSelect.value : '';
+				if ( q ) {
+					url.searchParams.set( FILTER_Q_PARAM, q );
+				} else {
+					url.searchParams.delete( FILTER_Q_PARAM );
+				}
+				if ( cls ) {
+					url.searchParams.set( FILTER_CLASS_PARAM, cls );
+				} else {
+					url.searchParams.delete( FILTER_CLASS_PARAM );
+				}
+				if ( url.toString() !== window.location.href ) {
+					window.history.replaceState( window.history.state, '', url.toString() );
+				}
+			} catch ( e ) {}
+		}
+
+		input.addEventListener( 'input', function () {
+			// Client-side, so short: a fast typist filters once, not per key.
+			window.clearTimeout( typing );
+			typing = window.setTimeout( applyFilter, 80 );
+		} );
+
+		input.addEventListener( 'keydown', function ( e ) {
+			// An empty field has nothing to clear, so Escape passes through.
+			if ( 'Escape' === e.key && input.value ) {
+				e.preventDefault();
+				window.clearTimeout( typing );
+				input.value = '';
+				applyFilter();
+			}
+		} );
+
+		if ( classSelect ) {
+			classSelect.addEventListener( 'change', applyFilter );
+		}
+
+		document.addEventListener( 'keydown', function ( e ) {
+			if ( '/' !== e.key || e.ctrlKey || e.metaKey || e.altKey ) {
+				return;
+			}
+			if ( ( modal && ! modal.hidden ) || ( bar && bar.hidden ) ) {
+				return;
+			}
+			var active = document.activeElement;
+			var tag = active ? active.tagName : '';
+			if ( 'INPUT' === tag || 'TEXTAREA' === tag || 'SELECT' === tag || ( active && active.isContentEditable ) ) {
+				return;
+			}
+			e.preventDefault();
+			input.focus();
+		} );
+
+		readUrl();
+		applyFilter();
+
+		return { refresh: refresh, clearSearch: clearSearch, reset: reset };
 	}
 
 	/* ------------------------------------------------------------------ *

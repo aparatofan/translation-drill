@@ -144,6 +144,30 @@ class TBTD_DB {
 	}
 
 	/**
+	 * The English and Polish of every sentence in every drill a user owns,
+	 * for the library search. One query for the whole library, never one per
+	 * row. Notes are left out on purpose: search covers the sentences only.
+	 *
+	 * @param int $user_id Owner.
+	 * @return object[] Each with parent_id, en, pl (markup), in drill and position order.
+	 */
+	public static function item_texts_for_owner( $user_id ) {
+		global $wpdb;
+		$drills = self::drills_table();
+		$items  = self::items_table();
+		return (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT i.drill_id AS parent_id, i.en, i.pl
+				FROM {$items} i
+				INNER JOIN {$drills} d ON d.id = i.drill_id
+				WHERE d.owner_id = %d
+				ORDER BY i.drill_id ASC, i.position ASC, i.id ASC",
+				(int) $user_id
+			)
+		);
+	}
+
+	/**
 	 * Every drill a user owns, newest change first, with its sentence count.
 	 *
 	 * @param int $user_id Owner.
