@@ -163,6 +163,21 @@ class TBTD_Teacher {
 			'stateDraft'       => __( 'Draft — students cannot open it yet.', 'translation-drill' ),
 			'stateLive'        => __( 'Published — students with the link can practise.', 'translation-drill' ),
 			'stateNew'         => __( 'Not saved yet.', 'translation-drill' ),
+			// Library filter.
+			'itemOne'          => __( 'drill', 'translation-drill' ),
+			'itemMany'         => __( 'drills', 'translation-drill' ),
+			/* translators: 1: drills shown, 2: drills in the group, 3: "drill" or "drills" */
+			'filterOf'         => __( '%1$d of %2$d %3$s', 'translation-drill' ),
+			/* translators: 1: number of drills, 2: "drill" or "drills" */
+			'filterAll'        => __( '%1$d %2$s', 'translation-drill' ),
+			/* translators: 1: drills shown, 2: drills in the library, 3: "drill" or "drills" */
+			'filterShowing'    => __( 'Showing %1$d of %2$d %3$s', 'translation-drill' ),
+			/* translators: 1: class or group name, 2: number of drills */
+			'optionLabel'      => __( '%1$s (%2$d)', 'translation-drill' ),
+			/* translators: %1$s: the matching sentence */
+			'hitQuote'         => __( '“%1$s”', 'translation-drill' ),
+			/* translators: %1$d: number of other matching sentences */
+			'hitMore'          => __( '+%1$d more', 'translation-drill' ),
 		);
 	}
 
@@ -250,31 +265,75 @@ class TBTD_Teacher {
 
 	/**
 	 * The library: drafts first, then each class, then drills with no class.
+	 *
+	 * The Admin Bar (title ─ search ─ class ─ button) is the one Swipe uses.
+	 * Filtering runs in the browser over the rows below: the library has no
+	 * pagination, so every drill the teacher owns is already on the page,
+	 * together with the text of its sentences for the content search.
 	 */
 	private function render_library() {
-		$drills = TBTD_DB::drills_for_owner( get_current_user_id() );
-		$groups = array();
-		$drafts = array();
-		$loose  = array();
+		$user_id = get_current_user_id();
+		$drills  = TBTD_DB::drills_for_owner( $user_id );
+		$groups  = $this->group_drills( $drills );
 
-		foreach ( $drills as $drill ) {
-			if ( TBTD_DB::STATUS_DRAFT === $drill->status ) {
-				$drafts[] = $drill;
-			} elseif ( $drill->class_id ) {
-				$groups[ (int) $drill->class_id ][] = $drill;
-			} else {
-				$loose[] = $drill;
+		// One query for every sentence in the library, grouped by drill.
+		$texts = array();
+		if ( $drills ) {
+			foreach ( TBTD_DB::item_texts_for_owner( $user_id ) as $item ) {
+				$texts[ (int) $item->parent_id ][] = array(
+					TBTD_Markup::plain( $item->en ),
+					TBTD_Markup::plain( $item->pl ),
+				);
 			}
 		}
 
-		$player_ready = '' !== TBTD_Urls::player_page();
+		// The filter is only rendered over a library that has something in it.
+		$has_items      = ! empty( $drills );
+		$filter_options = $has_items ? $this->filter_options( $groups ) : array();
+		$player_ready   = '' !== TBTD_Urls::player_page();
 		?>
 		<div class="tbtd-library" data-role="library">
-			<div class="tbtd-library-head">
-				<h2 class="tbtd-section-title"><?php esc_html_e( 'Your drills', 'translation-drill' ); ?></h2>
-				<span class="tbtd-library-line" aria-hidden="true"></span>
-				<a class="tbtd-btn tbtd-btn--primary" href="<?php echo esc_url( TBTD_Urls::new_url() ); ?>"><?php esc_html_e( 'Create a drill', 'translation-drill' ); ?></a>
+			<div class="tbtd-library-head<?php echo $has_items ? ' tbtd-library-head--filter' : ''; ?>" data-role="library-head">
+				<div class="tbtd-section-head">
+					<h2 class="tbtd-section-title"><?php esc_html_e( 'Your drills', 'translation-drill' ); ?></h2>
+					<?php // Joins the title to the next item; with no drills it runs to the button. ?>
+					<span class="tbtd-library-line" aria-hidden="true"></span>
+				</div>
+				<?php if ( $has_items ) : ?>
+					<div class="tbtd-filter" role="search" data-role="filter">
+						<div class="tbtd-filter-search">
+							<label class="tbtd-sr" for="tbtd-filter-q"><?php esc_html_e( 'Search drills', 'translation-drill' ); ?></label>
+							<svg class="tbtd-filter-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+								<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2.2"/>
+								<path d="m20 20-3.6-3.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+							</svg>
+							<input type="search" id="tbtd-filter-q" class="tbtd-input" data-role="filter-q"
+								placeholder="<?php esc_attr_e( 'Search drills and sentences', 'translation-drill' ); ?>"
+								autocomplete="off" spellcheck="false">
+							<button type="button" class="tbtd-filter-clear" data-role="filter-clear"
+								aria-label="<?php esc_attr_e( 'Clear search', 'translation-drill' ); ?>" hidden>&times;</button>
+						</div>
+						<span class="tbtd-library-line" aria-hidden="true"></span>
+						<label class="tbtd-sr" for="tbtd-filter-class"><?php esc_html_e( 'Class', 'translation-drill' ); ?></label>
+						<select id="tbtd-filter-class" class="tbtd-select tbtd-filter-class" data-role="filter-class">
+							<option value=""><?php esc_html_e( 'All classes', 'translation-drill' ); ?></option>
+							<?php foreach ( $filter_options as $option ) : ?>
+								<option value="<?php echo esc_attr( $option['value'] ); ?>"
+									data-name="<?php echo esc_attr( $option['name'] ); ?>"><?php echo esc_html( $option['label'] ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</div>
+					<span class="tbtd-library-line tbtd-library-line--end" aria-hidden="true" data-role="filter-end"></span>
+				<?php endif; ?>
+				<a class="tbtd-btn tbtd-btn--primary tbtd-library-cta" href="<?php echo esc_url( TBTD_Urls::new_url() ); ?>"><?php esc_html_e( 'Create new drill', 'translation-drill' ); ?></a>
 			</div>
+
+			<?php if ( $has_items ) : ?>
+				<p class="tbtd-filter-summary" data-role="filter-summary" aria-live="polite" hidden>
+					<span data-role="filter-summary-text"></span>
+					<button type="button" class="tbtd-filter-link" data-role="filter-reset"><?php esc_html_e( 'Clear filters', 'translation-drill' ); ?></button>
+				</p>
+			<?php endif; ?>
 
 			<div class="tbtd-notice tbtd-notice--error" data-role="error" hidden></div>
 
@@ -284,24 +343,25 @@ class TBTD_Teacher {
 				</div>
 			<?php endif; ?>
 
-			<?php if ( empty( $drills ) ) : ?>
-				<div class="tbtd-empty">
-					<p><?php esc_html_e( 'No drills yet. Create your first one: write a few English sentences from your lesson and highlight the expressions you taught.', 'translation-drill' ); ?></p>
-				</div>
-			<?php endif; ?>
+			<?php // Always present, so deleting the last drill can show it without a reload. ?>
+			<div class="tbtd-empty" data-role="library-empty"<?php echo $has_items ? ' hidden' : ''; ?>>
+				<p><?php esc_html_e( 'No drills yet. Create your first one: write a few English sentences from your lesson and highlight the expressions you taught.', 'translation-drill' ); ?></p>
+			</div>
 
 			<?php
-			if ( $drafts ) {
-				$this->render_group( __( 'Drafts', 'translation-drill' ), $drafts );
-			}
-			foreach ( $groups as $class_id => $list ) {
-				$title = TBTD_Classes::class_title( $class_id );
-				$this->render_group( '' !== $title ? $title : __( 'Class', 'translation-drill' ), $list );
-			}
-			if ( $loose ) {
-				$this->render_group( __( 'No class', 'translation-drill' ), $loose );
+			foreach ( $groups as $group ) {
+				$this->render_group( $group, $texts );
 			}
 			?>
+
+			<?php if ( $has_items ) : ?>
+				<div class="tbtd-empty" data-role="filter-empty" hidden>
+					<p>
+						<?php esc_html_e( 'No drills match your search.', 'translation-drill' ); ?>
+						<button type="button" class="tbtd-filter-link" data-role="filter-reset"><?php esc_html_e( 'Clear filters', 'translation-drill' ); ?></button>
+					</p>
+				</div>
+			<?php endif; ?>
 		</div>
 
 		<div class="tbtd-modal" data-role="qr-modal" hidden>
@@ -315,18 +375,131 @@ class TBTD_Teacher {
 	}
 
 	/**
+	 * Drafts, then each class in the order the drills bring it up, then
+	 * drills with no class.
+	 *
+	 * Each group carries the two values the library filter addresses it by:
+	 * 'key' (dropdown value, URL value, data-filter-group) and 'search_name'.
+	 * Only a real class with a resolved title is searchable — "Drafts",
+	 * "No class" and the 'Class' fallback are the plugin's own words, so
+	 * typing "class" must not match every unattached drill.
+	 *
+	 * @param object[] $drills Drills with item_count.
+	 * @return array[] Each array( 'key', 'title', 'search_name', 'drills' ).
+	 */
+	private function group_drills( array $drills ) {
+		$drafts  = array();
+		$classes = array();
+		$loose   = array();
+
+		foreach ( $drills as $drill ) {
+			if ( TBTD_DB::STATUS_DRAFT === $drill->status ) {
+				$drafts[] = $drill;
+			} elseif ( $drill->class_id ) {
+				$class_id = (int) $drill->class_id;
+				if ( ! isset( $classes[ $class_id ] ) ) {
+					$title                = TBTD_Classes::class_title( $class_id );
+					$classes[ $class_id ] = array(
+						'key'         => 'c' . $class_id,
+						'title'       => '' !== $title ? $title : __( 'Class', 'translation-drill' ),
+						'search_name' => $title,
+						'drills'      => array(),
+					);
+				}
+				$classes[ $class_id ]['drills'][] = $drill;
+			} else {
+				$loose[] = $drill;
+			}
+		}
+
+		$groups = array();
+		if ( $drafts ) {
+			$groups[] = array(
+				'key'         => 'drafts',
+				'title'       => __( 'Drafts', 'translation-drill' ),
+				'search_name' => '',
+				'drills'      => $drafts,
+			);
+		}
+		foreach ( $classes as $group ) {
+			$groups[] = $group;
+		}
+		if ( $loose ) {
+			$groups[] = array(
+				'key'         => 'none',
+				'title'       => __( 'No class', 'translation-drill' ),
+				'search_name' => '',
+				'drills'      => $loose,
+			);
+		}
+		return $groups;
+	}
+
+	/**
+	 * Options for the class dropdown: classes A–Z (accent-stripped, so
+	 * "Łukasz" sorts under L), then Drafts, then No class.
+	 *
+	 * @param array[] $groups Groups from group_drills().
+	 * @return array[] Each array( 'value', 'label', 'name', 'count' ).
+	 */
+	private function filter_options( array $groups ) {
+		$classes = array();
+		$drafts  = null;
+		$none    = null;
+
+		foreach ( $groups as $group ) {
+			$count  = count( $group['drills'] );
+			$option = array(
+				'value' => $group['key'],
+				'label' => sprintf(
+					/* translators: 1: class or group name, 2: number of drills */
+					__( '%1$s (%2$d)', 'translation-drill' ),
+					$group['title'],
+					$count
+				),
+				// The bare name, so JS can rebuild the label after a delete.
+				'name'  => $group['title'],
+				'count' => $count,
+			);
+
+			if ( 'drafts' === $group['key'] ) {
+				$drafts = $option;
+			} elseif ( 'none' === $group['key'] ) {
+				$none = $option;
+			} else {
+				$classes[] = $option;
+			}
+		}
+
+		usort(
+			$classes,
+			function ( $a, $b ) {
+				return strnatcasecmp( remove_accents( $a['name'] ), remove_accents( $b['name'] ) );
+			}
+		);
+
+		if ( $drafts ) {
+			$classes[] = $drafts;
+		}
+		if ( $none ) {
+			$classes[] = $none;
+		}
+		return $classes;
+	}
+
+	/**
 	 * One group of drill rows.
 	 *
-	 * @param string   $name   Group heading.
-	 * @param object[] $drills Rows.
+	 * @param array $group Group from group_drills().
+	 * @param array $texts Sentence pairs by drill ID, for the content search.
 	 */
-	private function render_group( $name, array $drills ) {
-		$count = count( $drills );
+	private function render_group( array $group, array $texts ) {
+		$count = count( $group['drills'] );
 		?>
-		<section class="tbtd-group">
+		<section class="tbtd-group" data-role="group" data-filter-group="<?php echo esc_attr( $group['key'] ); ?>"<?php echo '' !== $group['search_name'] ? ' data-filter-name="' . esc_attr( $group['search_name'] ) . '"' : ''; ?>>
 			<div class="tbtd-group-head">
-				<h3 class="tbtd-group-name"><?php echo esc_html( $name ); ?></h3>
-				<span class="tbtd-group-count">
+				<h3 class="tbtd-group-name" data-role="group-name"><?php echo esc_html( $group['title'] ); ?></h3>
+				<span class="tbtd-group-count" data-role="group-count">
 					<?php
 					/* translators: %d: number of drills */
 					echo esc_html( sprintf( _n( '%d drill', '%d drills', $count, 'translation-drill' ), $count ) );
@@ -334,8 +507,8 @@ class TBTD_Teacher {
 				</span>
 				<span class="tbtd-group-rule" aria-hidden="true"></span>
 			</div>
-			<?php foreach ( $drills as $drill ) : ?>
-				<?php $this->render_row( $drill ); ?>
+			<?php foreach ( $group['drills'] as $drill ) : ?>
+				<?php $this->render_row( $drill, isset( $texts[ (int) $drill->id ] ) ? $texts[ (int) $drill->id ] : array() ); ?>
 			<?php endforeach; ?>
 		</section>
 		<?php
@@ -347,24 +520,39 @@ class TBTD_Teacher {
 	 * Drafts offer Preview, Edit and Delete only: a student opening a draft's
 	 * link gets "not available", so Copy link and QR would fail silently.
 	 *
+	 * The data-search-* attributes are what the library filter matches and
+	 * marks: the element text may already hold a <mark>, so the source text
+	 * travels separately. data-search-items is the [ english, polish ] text
+	 * of every sentence, markup stripped.
+	 *
 	 * @param object $drill Row with item_count.
+	 * @param array  $pairs Sentence pairs, each array( english, polish ).
 	 */
-	private function render_row( $drill ) {
+	private function render_row( $drill, array $pairs = array() ) {
 		$is_draft = TBTD_DB::STATUS_DRAFT === $drill->status;
 		$url      = TBTD_Urls::drill_url( $drill->slug );
 		$class    = $drill->class_id ? TBTD_Classes::class_title( (int) $drill->class_id ) : '';
 		$lesson   = $drill->lesson_id ? TBTD_Classes::lesson_title( (int) $drill->lesson_id ) : '';
+		$chip     = '' !== $class ? ( '' !== $lesson ? $class . ' · ' . $lesson : $class ) : '';
 		$count    = (int) $drill->item_count;
+		// Hex-escaped so the attribute holds no quotes or ampersands for
+		// esc_attr() to reinterpret; JSON.parse() restores them.
+		$items_json = wp_json_encode( array_values( $pairs ), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT );
 		?>
-		<article class="tbtd-drill<?php echo $is_draft ? ' tbtd-drill--draft' : ''; ?>" data-id="<?php echo (int) $drill->id; ?>">
+		<article class="tbtd-drill<?php echo $is_draft ? ' tbtd-drill--draft' : ''; ?>" data-id="<?php echo (int) $drill->id; ?>"
+			data-search-title="<?php echo esc_attr( $drill->title ); ?>"
+			<?php if ( '' !== $chip ) : ?>
+				data-search-chip="<?php echo esc_attr( $chip ); ?>"
+			<?php endif; ?>
+			data-search-items="<?php echo esc_attr( $items_json ? $items_json : '[]' ); ?>">
 			<div class="tbtd-drill-body">
-				<h4 class="tbtd-drill-title"><?php echo esc_html( $drill->title ); ?></h4>
+				<h4 class="tbtd-drill-title" data-role="item-title"><?php echo esc_html( $drill->title ); ?></h4>
 				<div class="tbtd-drill-meta">
 					<?php if ( $is_draft ) : ?>
 						<span class="tbtd-chip tbtd-chip--draft"><?php esc_html_e( 'Draft', 'translation-drill' ); ?></span>
 					<?php endif; ?>
-					<?php if ( '' !== $class ) : ?>
-						<span class="tbtd-chip"><?php echo esc_html( '' !== $lesson ? $class . ' · ' . $lesson : $class ); ?></span>
+					<?php if ( '' !== $chip ) : ?>
+						<span class="tbtd-chip" data-role="item-chip"><?php echo esc_html( $chip ); ?></span>
 					<?php endif; ?>
 					<span>
 						<?php
@@ -375,6 +563,7 @@ class TBTD_Teacher {
 					<span aria-hidden="true">·</span>
 					<span><?php echo esc_html( mysql2date( get_option( 'date_format' ), $drill->updated_at ) ); ?></span>
 				</div>
+				<p class="tbtd-hit-line" data-role="item-hit" hidden></p>
 			</div>
 			<div class="tbtd-drill-actions">
 				<?php if ( '' !== $url ) : ?>
