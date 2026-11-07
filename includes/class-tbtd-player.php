@@ -86,6 +86,7 @@ class TBTD_Player {
 					'hideAnswer'  => __( 'Hide model answer', 'translation-drill' ),
 					/* translators: spoken label for a gapped phrase. 1: its first letter, 2: number of letters */
 					'startsWith'  => __( 'Starts with %1$s, %2$d letters', 'translation-drill' ),
+					'tapReveal'   => __( 'Tap to see the full expression', 'translation-drill' ),
 					'listen'      => __( 'Listen', 'translation-drill' ),
 					'stop'        => __( 'Stop', 'translation-drill' ),
 					'loading'     => __( 'Loading', 'translation-drill' ),

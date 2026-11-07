@@ -6,8 +6,8 @@
  *   1. Polish sentence — highlighted expressions carry the colour of their
  *      English partner.
  *   2. Translate phrases — always open: each Polish expression with its
- *      English gapped (first letters only). Hidden when there are no marks,
- *      and the model answer becomes step 2.
+ *      English gapped (first letters only); a tap reveals that expression.
+ *      Hidden when there are no marks, and the model answer becomes step 2.
  *   3. Model answer — the full English in the same colours, the teacher's
  *      note and, when TBT Flashcards is set up, Listen.
  *
@@ -186,6 +186,16 @@
 		}
 	}
 
+	/** A phrase's English: in full once tapped, otherwise gapped with the tap prompt. */
+	function phraseEn( phrase, open ) {
+		if ( open ) {
+			return esc( phrase );
+		}
+		var label = fmt( t.startsWith, phrase.charAt( 0 ), phrase.replace( /\s+/g, '' ).length );
+		return '<span class="tbtd-p-gap" aria-label="' + esc( label ) + '">' + esc( gap( phrase ) ) + '</span>'
+			+ '<span class="tbtd-p-tap">' + esc( t.tapReveal ) + '</span>';
+	}
+
 	function start( root ) {
 		var data;
 		try {
@@ -201,7 +211,7 @@
 		var items = data.items;
 		var storeKey = 'tbtd-pos-' + data.slug;
 		var state = items.map( function () {
-			return { answer: false };
+			return { answer: false, open: {} };
 		} );
 		var i = 0;
 		var listenBtn = $( 'listen' );
@@ -277,18 +287,17 @@
 			$( 'pl' ).innerHTML = marked( item.pl );
 
 			// Phrases: every English highlight, in colour order, with its Polish
-			// partner where there is one. Read-only: the English stays gapped.
+			// partner where there is one. The English is gapped until tapped.
 			var pl = chunks( item.pl );
 			var en = chunks( item.en );
 			var keys = Object.keys( en ).sort();
 			$( 'phrases' ).innerHTML = keys.map( function ( n ) {
-				var phrase = en[ n ];
-				var label = fmt( t.startsWith, phrase.charAt( 0 ), phrase.replace( /\s+/g, '' ).length );
-				return '<li class="tbtd-p-phrase">'
+				var open = !! st.open[ n ];
+				return '<li><button type="button" class="tbtd-p-phrase' + ( open ? ' is-open' : '' ) + '" data-n="' + n + '" aria-expanded="' + open + '">'
 					+ '<span class="tbtd-p-phrase-pl" lang="pl"><span class="tbtd-p-dot tbtd-p-dot' + n + '"></span>' + ( pl[ n ] ? esc( pl[ n ] ) : '' ) + '</span>'
 					+ '<span class="tbtd-p-arrow" aria-hidden="true">→</span>'
-					+ '<span class="tbtd-p-phrase-en tbtd-p-en' + n + '" lang="en" aria-label="' + esc( label ) + '">' + esc( gap( phrase ) ) + '</span>'
-					+ '</li>';
+					+ '<span class="tbtd-p-phrase-en tbtd-p-en' + n + '" lang="en">' + phraseEn( en[ n ], open ) + '</span>'
+					+ '</button></li>';
 			} ).join( '' );
 			$( 'step-phrases' ).hidden = ! keys.length;
 			$( 'answer-num' ).textContent = keys.length ? '3' : '2';
@@ -423,6 +432,20 @@
 			} ).catch( function ( err ) { fallback( text, seq, err ); } );
 		}
 
+		// Toggled in place rather than re-rendered, so the tapped row keeps focus.
+		$( 'phrases' ).addEventListener( 'click', function ( e ) {
+			var b = e.target.closest( '.tbtd-p-phrase' );
+			if ( ! b ) {
+				return;
+			}
+			noteInteraction();
+			var n = b.getAttribute( 'data-n' );
+			var open = ! state[ i ].open[ n ];
+			state[ i ].open[ n ] = open;
+			b.classList.toggle( 'is-open', open );
+			b.setAttribute( 'aria-expanded', open ? 'true' : 'false' );
+			b.querySelector( '.tbtd-p-phrase-en' ).innerHTML = phraseEn( chunks( items[ i ].en )[ n ], open );
+		} );
 		$( 'answer-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleAnswer(); } );
 		$( 'hide-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleAnswer(); } );
 		listenBtn.addEventListener( 'click', toggleListen );
