@@ -14,7 +14,7 @@ Polish → English sentence translation drills for live lessons. Replaces the Wo
 5. Students (logged in) see one Polish sentence at a time, in three numbered steps. They say the translation out loud; there is no typing box.
    - **Polish sentence**, with the key expressions highlighted.
    - **Translate phrases**, always open: each highlighted Polish expression with its English gapped — `p___ your b____` — and a tap reveals it. A sentence without highlights skips this step.
-   - **Model answer** (`A`) shows the English with the same colours and the note. When TBT Flashcards is active with an ElevenLabs key, **Listen** (`P`) reads the English in the Flashcards voice, through Flashcards' own audio proxy and cache.
+   - **Model answer** (`A`) shows the English with the same colours. The teacher's note is not shown to students. When TBT Flashcards is active with an ElevenLabs key, **Listen** (`P`) reads the English in the Flashcards voice, through Flashcards' own audio proxy and cache.
    - `←` `→` move between sentences.
 
 Nothing is scored or stored about students. The page remembers which sentence a student reached, in their browser only.

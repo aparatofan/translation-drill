@@ -151,11 +151,6 @@
 /* ---------- Model answer ---------- */
 .tbtd-p-answer { display: flex; flex-direction: column; gap: var(--tbt-s4); }
 .tbtd-p-answer-actions { display: flex; flex-wrap: wrap; gap: var(--tbt-s3); }
-.tbt .tbtd-p-note {
-  margin: 0 !important; padding: 12px 16px; border-radius: var(--tbt-r-md); max-width: 70ch;
-  background-color: var(--tbt-blue-wash); font-size: 16px; line-height: 1.55; color: var(--tbt-ink);
-}
-.tbt .tbtd-p-note b { color: var(--tbt-blue-deep); }
 
 .is-in { animation: tbtd-rise .26s var(--tbt-ease); }
 @keyframes tbtd-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

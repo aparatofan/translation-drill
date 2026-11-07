@@ -8,8 +8,9 @@
  *   2. Translate phrases — always open: each Polish expression with its
  *      English gapped (first letters only); a tap reveals that expression.
  *      Hidden when there are no marks, and the model answer becomes step 2.
- *   3. Model answer — the full English in the same colours, the teacher's
- *      note and, when TBT Flashcards is set up, Listen.
+ *   3. Model answer — the full English in the same colours and, when TBT
+ *      Flashcards is set up, Listen. The teacher's note is not shown here:
+ *      students mistook it for the answer.
  *
  * Listen borrows Flashcards' ElevenLabs proxy (admin-ajax, same request as
  * Flashcards makes). Each sentence is fetched once per page load and kept as
@@ -303,9 +304,6 @@
 			$( 'answer-num' ).textContent = keys.length ? '3' : '2';
 
 			$( 'en' ).innerHTML = marked( item.en );
-			var note = $( 'note' );
-			note.innerHTML = item.note || '';
-			note.hidden = ! item.note;
 			$( 'step-answer' ).classList.toggle( 'tbtd-p-step--waiting', ! st.answer );
 			$( 'answer-btn' ).hidden = st.answer;
 			$( 'answer-panel' ).hidden = ! st.answer;

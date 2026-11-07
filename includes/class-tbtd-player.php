@@ -185,10 +185,11 @@ class TBTD_Player {
 			if ( '' === TBTD_Markup::plain( $item->pl ) ) {
 				continue;
 			}
+			// The teacher's note stays on the teacher page: shown under the model
+			// answer, students took it for the answer itself.
 			$items[] = array(
-				'pl'   => (string) $item->pl,
-				'en'   => (string) $item->en,
-				'note' => TBTD_Markup::note_html( $item->note ),
+				'pl' => (string) $item->pl,
+				'en' => (string) $item->en,
 			);
 		}
 
@@ -265,7 +266,6 @@ class TBTD_Player {
 							<button type="button" class="tbtd-p-btn tbtd-p-listen" data-role="listen" data-state="idle" hidden></button>
 							<button type="button" class="tbtd-p-btn" data-role="hide-btn"><?php esc_html_e( 'Hide model answer', 'translation-drill' ); ?></button>
 						</div>
-						<p class="tbtd-p-note" data-role="note" hidden></p>
 					</div>
 				</section>
 			</div>
