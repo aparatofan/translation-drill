@@ -3,7 +3,8 @@
  *
  * Two independent parts, each starting only if its markup is on the page:
  *   - the library: search and class filter, delete, copy link, QR code
- *   - the builder: sentence rows with a select-to-highlight editor for the
+ *   - the builder: the English sentence list (typed, pasted or written by
+ *     the AI), sentence rows with a select-to-highlight editor for the
  *     English and the Polish, AI translation, save / publish / share
  *
  * The highlight format is the contract with the server (TBTD_Markup):
@@ -775,11 +776,12 @@
 
 		var errorBox = $( 'error' );
 		var list = $( 'items' );
+		var srows = $( 'srows' );
 		var titleInput = $( 'title' );
-		var contextInput = $( 'context' );
 		var classInput = $( 'class' );
 		var classIdField = $( 'class-id' );
 		var classHint = $( 'class-hint' );
+		var classHelp = $( 'class-help' );
 		var classList = root.querySelector( '#tbtd-class-list' );
 		var lessonSelect = $( 'lesson' );
 		var lessonWrap = $( 'lesson-wrap' );
@@ -795,6 +797,14 @@
 		var share = $( 'share' );
 		var anotherRow = $( 'another-row' );
 		var defaultStatus = translateStatus.textContent.trim();
+		var stage3 = $( 'stage-highlight' );
+		var generateBtn = $( 'generate' );
+		var genStatus = $( 'gen-status' );
+		var genDefault = genStatus.textContent.trim();
+		var continueBtn = $( 'continue' );
+		var continueHelp = $( 'continue-help' );
+		var removeAllBtn = $( 'remove-all' );
+		var reduceMotion = window.matchMedia && window.matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
 
 		var state = {
 			id: initial ? initial.id : 0,
@@ -804,7 +814,10 @@
 			items: [],
 			busy: false,
 			dirty: false,
-			remaining: cfg.remaining
+			remaining: cfg.remaining,
+			// Stage 3 waits for "Continue" on a new drill; a saved drill with
+			// sentences opens with it. Once open it stays open.
+			stage3Open: !! ( initial && initial.items && initial.items.length )
 		};
 		var keySeq = 0;
 
@@ -828,6 +841,8 @@
 				// The English colour the next Polish selection pairs with, when
 				// the teacher picked one; otherwise the first unpaired colour.
 				target: null,
+				// Written by the AI in this session. Shown as a tag, never saved.
+				ai: false,
 				dom: {}
 			};
 		}
@@ -835,8 +850,8 @@
 		function markDirty() {
 			state.dirty = true;
 			savedMsg.textContent = '';
-			refreshStage2();
-			refreshStage3();
+			refreshTranslateBar();
+			refreshApprove();
 		}
 
 		window.addEventListener( 'beforeunload', function ( e ) {
@@ -850,7 +865,7 @@
 		/* ---------- status of one row ---------- */
 
 		function rowStatus( item ) {
-			if ( ! item.en.text ) {
+			if ( ! hasText( item ) ) {
 				return '';
 			}
 			if ( ! item.pl.text ) {
@@ -877,6 +892,60 @@
 
 		/* ---------- row construction ---------- */
 
+		/**
+		 * Each item has two views: the Stage 2 row (number, English input,
+		 * "AI" tag, ×) and the Stage 3 row (highlighting, Polish, note). The
+		 * English input lives only in Stage 2; Stage 3 shows the sentence as
+		 * the picker.
+		 */
+		function buildRows( item ) {
+			buildSrow( item );
+			buildRow( item );
+		}
+
+		function buildSrow( item ) {
+			var d = item.dom;
+
+			d.sn = el( 'span', { className: 'tbtd-item-n' } );
+			d.enInput = el( 'input', {
+				type: 'text',
+				className: 'tbtd-input tbtd-input--sentence',
+				placeholder: t.enPlaceholder,
+				'aria-label': t.english,
+				maxlength: '400'
+			} );
+			d.enInput.value = item.en.text;
+			d.enInput.addEventListener( 'input', function () { onTextInput( item, 'en' ); } );
+			d.enInput.addEventListener( 'keydown', function ( e ) {
+				if ( e.key !== 'Enter' || e.isComposing ) {
+					return;
+				}
+				e.preventDefault();
+				var at = state.items.indexOf( item ) + 1;
+				if ( liveCount() < cfg.maxItems ) {
+					addItem( newItem(), true, at );
+					markDirty();
+				}
+			} );
+			d.src = el( 'span', { className: 'tbtd-src', text: t.aiTag, title: t.aiTagTitle } );
+			d.src.hidden = ! item.ai;
+
+			d.srow = el( 'li', { className: 'tbtd-srow', 'data-key': item.key }, [
+				d.sn,
+				d.enInput,
+				d.src,
+				el( 'button', {
+					type: 'button',
+					className: 'tbtd-item-x',
+					'aria-label': t.removeSentence,
+					title: t.removeSentence,
+					text: '×',
+					onclick: function () { removeItem( item ); }
+				} )
+			] );
+			return d.srow;
+		}
+
 		function buildRow( item ) {
 			var d = item.dom;
 
@@ -890,16 +959,6 @@
 				text: '×',
 				onclick: function () { removeItem( item ); }
 			} );
-
-			d.enInput = el( 'input', {
-				type: 'text',
-				className: 'tbtd-input tbtd-input--sentence',
-				placeholder: t.enPlaceholder,
-				'aria-label': t.english,
-				maxlength: '400'
-			} );
-			d.enInput.value = item.en.text;
-			d.enInput.addEventListener( 'input', function () { onTextInput( item, 'en' ); } );
 
 			d.enPreview = el( 'div', { className: 'tbtd-preview', 'data-key': item.key, 'data-side': 'en' } );
 			d.enTools = el( 'div', { className: 'tbtd-tools' } );
@@ -941,7 +1000,6 @@
 				el( 'div', { className: 'tbtd-item-head' }, [ d.n, d.status, removeBtn ] ),
 				el( 'div', { className: 'tbtd-lang' }, [
 					el( 'span', { className: 'tbtd-lang-label', text: t.english } ),
-					d.enInput,
 					d.enPreview,
 					d.enTools
 				] ),
@@ -1116,10 +1174,59 @@
 			d.translateBtn.disabled = state.busy;
 		}
 
+		function hasText( item ) {
+			return !! item.en.text.trim();
+		}
+
+		function liveCount() {
+			return state.items.filter( hasText ).length;
+		}
+
+		/**
+		 * Bring both lists in line with state.items. Stage 2 numbers every
+		 * row; Stage 3 holds only sentences with English, numbered in list
+		 * order — the numbers the server and the warnings use. Rows already
+		 * in place are not touched, so typing never loses focus.
+		 */
 		function renumber() {
 			state.items.forEach( function ( item, i ) {
-				item.dom.n.textContent = String( i + 1 );
+				item.dom.sn.textContent = String( i + 1 );
+				item.dom.enInput.setAttribute( 'aria-label', fmt( t.sentenceLabel, i + 1 ) );
 			} );
+
+			var wanted = state.stage3Open ? state.items.filter( hasText ) : [];
+			var ref = list.firstChild;
+			wanted.forEach( function ( item, i ) {
+				item.dom.n.textContent = String( i + 1 );
+				if ( item.dom.row === ref ) {
+					ref = ref.nextSibling;
+				} else {
+					list.insertBefore( item.dom.row, ref );
+				}
+			} );
+			while ( ref ) {
+				var next = ref.nextSibling;
+				list.removeChild( ref );
+				ref = next;
+			}
+
+			refreshContent();
+		}
+
+		/** Stage 2's count, empty state, tools and Continue bar; Stage 3's waiting state. */
+		function refreshContent() {
+			var live = liveCount();
+			$( 'list-count' ).textContent = live === 1 ? t.sentence1 : fmt( t.sentenceN, live );
+			$( 'list-empty' ).hidden = state.items.length > 0;
+			removeAllBtn.hidden = state.items.length === 0;
+
+			continueBtn.hidden = state.stage3Open;
+			continueBtn.disabled = live === 0;
+			continueHelp.textContent = state.stage3Open ? t.continueOpen : ( live ? t.continueReady : t.continueEmpty );
+
+			stage3.setAttribute( 'data-state', state.stage3Open ? 'active' : 'waiting' );
+			$( 'stage-wait' ).hidden = state.stage3Open;
+			$( 'stage-body' ).hidden = ! state.stage3Open;
 		}
 
 		/* ---------- editing ---------- */
@@ -1150,6 +1257,11 @@
 				item.src = serialize( item.en );
 			}
 			refreshRow( item );
+			if ( sideName === 'en' ) {
+				// A sentence may have just gained or lost its text: Stage 3
+				// shows it or drops it straight away.
+				renumber();
+			}
 			markDirty();
 		}
 
@@ -1316,33 +1428,69 @@
 
 		/* ---------- adding and removing rows ---------- */
 
-		function addItem( item, focus ) {
-			state.items.push( item );
-			list.appendChild( buildRow( item ) );
+		/**
+		 * @param {Object}  item  New item.
+		 * @param {boolean} focus Focus its English input.
+		 * @param {number}  [at]  Position in the list; the end by default.
+		 */
+		function addItem( item, focus, at ) {
+			buildRows( item );
+			if ( at === undefined || at >= state.items.length ) {
+				state.items.push( item );
+				srows.appendChild( item.dom.srow );
+			} else {
+				srows.insertBefore( item.dom.srow, state.items[ at ].dom.srow );
+				state.items.splice( at, 0, item );
+			}
 			renumber();
-			refreshStage2();
+			refreshTranslateBar();
 			if ( focus ) {
 				item.dom.enInput.focus();
 			}
 		}
 
+		function dropItem( item ) {
+			state.items = state.items.filter( function ( it ) { return it !== item; } );
+			item.dom.srow.remove();
+			item.dom.row.remove();
+		}
+
+		/** The lone empty row a teacher may have added before pasting or generating. */
+		function dropEmptyStarter() {
+			if ( state.items.length === 1 && ! state.items[ 0 ].en.text && ! state.items[ 0 ].pl.text ) {
+				dropItem( state.items[ 0 ] );
+			}
+		}
+
+		// A new drill may have no rows at all; nothing forces one back.
 		function removeItem( item ) {
 			var hasContent = item.en.text || item.pl.text || item.note;
 			if ( hasContent && ! window.confirm( t.confirmRemove ) ) {
 				return;
 			}
-			state.items = state.items.filter( function ( it ) { return it !== item; } );
-			item.dom.row.remove();
-			if ( ! state.items.length ) {
-				addItem( newItem(), false );
-			}
+			dropItem( item );
 			renumber();
-			refreshStage2();
+			refreshTranslateBar();
 			markDirty();
 		}
 
 		$( 'add' ).addEventListener( 'click', function () {
+			if ( liveCount() >= cfg.maxItems ) {
+				showError( errorBox, fmt( t.tooManyItems, cfg.maxItems ) );
+				return;
+			}
 			addItem( newItem(), true );
+			markDirty();
+		} );
+
+		removeAllBtn.addEventListener( 'click', function () {
+			var live = liveCount();
+			if ( live && ! window.confirm( fmt( t.confirmRemoveAll, live ) ) ) {
+				return;
+			}
+			state.items.slice().forEach( dropItem );
+			renumber();
+			refreshTranslateBar();
 			markDirty();
 		} );
 
@@ -1352,13 +1500,11 @@
 			if ( ! lines.length ) {
 				return;
 			}
-			// Replace the lone empty row a new drill starts with.
-			if ( state.items.length === 1 && ! state.items[ 0 ].en.text && ! state.items[ 0 ].pl.text ) {
-				state.items[ 0 ].dom.row.remove();
-				state.items = [];
-			}
+			// Replace a lone empty row rather than leave it above the paste.
+			// Marks typed as [expression|n] are kept and show in Stage 3.
+			dropEmptyStarter();
 			lines.forEach( function ( line ) {
-				if ( state.items.length < cfg.maxItems ) {
+				if ( liveCount() < cfg.maxItems ) {
 					addItem( newItem( line ), false );
 				}
 			} );
@@ -1367,9 +1513,115 @@
 			markDirty();
 		} );
 
+		/* ---------- content stage: modes and generation ---------- */
+
+		function chosen( name ) {
+			var input = root.querySelector( 'input[name="' + name + '"]:checked' );
+			return input ? input.value : '';
+		}
+
+		function refreshMode() {
+			var ai = $( 'mode-ai' ).checked;
+			$( 'compose-ai' ).hidden = ! ai;
+			$( 'compose-own' ).hidden = ai;
+		}
+		root.querySelectorAll( 'input[name="tbtd-mode"]' ).forEach( function ( radio ) {
+			radio.addEventListener( 'change', refreshMode );
+		} );
+
+		/** Briefly tint rows that just arrived, so the teacher sees where they went. */
+		function flagFresh( items ) {
+			if ( reduceMotion || ! items.length ) {
+				return;
+			}
+			items.forEach( function ( item ) { item.dom.srow.classList.add( 'is-fresh' ); } );
+			window.requestAnimationFrame( function () {
+				window.requestAnimationFrame( function () {
+					items.forEach( function ( item ) { item.dom.srow.classList.remove( 'is-fresh' ); } );
+				} );
+			} );
+		}
+
+		function generate() {
+			showError( errorBox, '' );
+			var count = parseInt( chosen( 'tbtd-count' ), 10 ) || 6;
+			var level = chosen( 'tbtd-level' ) || 'B1';
+			var room = cfg.maxItems - liveCount();
+			if ( room <= 0 ) {
+				showError( errorBox, fmt( t.tooManyItems, cfg.maxItems ) );
+				return;
+			}
+
+			root.classList.add( 'is-generating' );
+			setBusy( true );
+			genStatus.textContent = fmt( t.generating, count, level );
+
+			api( 'POST', 'generate', {
+				count: count,
+				level: level,
+				vocabulary: $( 'vocabulary' ).value,
+				grammar: $( 'grammar' ).value,
+				avoid: state.items.filter( hasText ).map( function ( item ) { return item.en.text; } )
+			} ).then( function ( res ) {
+				state.remaining = res.remaining;
+				var sentences = res.sentences || [];
+				var fit = sentences.slice( 0, Math.max( 0, cfg.maxItems - liveCount() ) );
+				var added = [];
+				dropEmptyStarter();
+				fit.forEach( function ( sentence ) {
+					var item = newItem( sentence );
+					item.ai = true;
+					addItem( item, false );
+					added.push( item );
+				} );
+				flagFresh( added );
+				if ( fit.length < sentences.length ) {
+					genStatus.textContent = fmt( t.generatedPart, fit.length, sentences.length, cfg.maxItems );
+				} else {
+					genStatus.textContent = added.length === 1 ? t.generated1 : fmt( t.generatedN, added.length );
+				}
+				if ( added.length ) {
+					markDirty();
+				}
+			} ).catch( function ( err ) {
+				genStatus.textContent = genDefault;
+				showError( errorBox, err.code === 'tbtd_quota' ? t.quota : err.message );
+			} ).then( function () {
+				root.classList.remove( 'is-generating' );
+				setBusy( false );
+			} );
+		}
+
+		generateBtn.addEventListener( 'click', generate );
+
+		continueBtn.addEventListener( 'click', function () {
+			if ( ! liveCount() ) {
+				return;
+			}
+			state.stage3Open = true;
+			renumber();
+			refreshTranslateBar();
+			stage3.scrollIntoView( { behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' } );
+		} );
+
+		/** Show a sentence where it can be fixed: its Stage 3 row, or its Stage 2 input. */
+		function showItem( item ) {
+			if ( ! hasText( item ) ) {
+				item.dom.srow.scrollIntoView( { behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' } );
+				item.dom.enInput.focus( { preventScroll: true } );
+				return;
+			}
+			if ( ! state.stage3Open ) {
+				state.stage3Open = true;
+				renumber();
+				refreshTranslateBar();
+			}
+			item.dom.row.scrollIntoView( { behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' } );
+		}
+
 		/* ---------- translation ---------- */
 
-		function refreshStage2() {
+		function refreshTranslateBar() {
 			var pending = state.items.filter( needsTranslation ).length;
 			if ( state.busy ) {
 				translateBtn.disabled = true;
@@ -1380,6 +1632,7 @@
 			state.items.forEach( function ( item ) {
 				item.dom.translateBtn.disabled = state.busy;
 			} );
+			generateBtn.disabled = state.busy;
 		}
 
 		function setBusy( busy, message ) {
@@ -1388,7 +1641,7 @@
 			saveBtn.disabled = busy;
 			publishBtn.disabled = busy;
 			translateStatus.textContent = message || remainingLine();
-			refreshStage2();
+			refreshTranslateBar();
 		}
 
 		function remainingLine() {
@@ -1397,7 +1650,7 @@
 
 		function translate( items ) {
 			showError( errorBox, '' );
-			var todo = items.filter( function ( item ) { return item.en.text; } );
+			var todo = items.filter( hasText );
 			if ( ! todo.length ) {
 				showError( errorBox, t.noSentences );
 				return;
@@ -1414,8 +1667,7 @@
 			var run = chunks.reduce( function ( chain, chunk ) {
 				return chain.then( function () {
 					return api( 'POST', 'translate', {
-						sentences: chunk.map( function ( item ) { return serialize( item.en ); } ),
-						context: contextInput.value
+						sentences: chunk.map( function ( item ) { return serialize( item.en ); } )
 					} ).then( function ( res ) {
 						state.remaining = res.remaining;
 						( res.items || [] ).forEach( function ( out, idx ) {
@@ -1557,16 +1809,31 @@
 			lessonSelect.addEventListener( 'change', markDirty );
 		}
 		titleInput.addEventListener( 'input', markDirty );
-		contextInput.addEventListener( 'input', markDirty );
+
+		/** The help line under the class field says what a class does or does not change. */
+		function refreshClassHelp() {
+			if ( classHelp && classInput ) {
+				classHelp.textContent = classOptionFor( classInput.value ) ? t.classSet : t.classNone;
+			}
+		}
+		if ( classInput ) {
+			classInput.addEventListener( 'input', refreshClassHelp );
+			classInput.addEventListener( 'change', refreshClassHelp );
+		}
 
 		/* ---------- approve, save, share ---------- */
 
 		function collectWarnings() {
 			var out = [];
+			// A sentence whose English was cleared but whose Polish is still
+			// there cannot be saved; it is fixed in Stage 2.
 			state.items.forEach( function ( item, i ) {
-				if ( ! item.en.text ) {
-					return;
+				if ( ! hasText( item ) && item.pl.text.trim() ) {
+					out.push( { item: item, text: fmt( t.missingEn, i + 1 ), blocking: true } );
 				}
+			} );
+			// Numbered as in Stage 3: sentences with English, in list order.
+			state.items.filter( hasText ).forEach( function ( item, i ) {
 				if ( ! item.pl.text ) {
 					out.push( { item: item, text: fmt( t.missingPl, i + 1 ), blocking: true } );
 					return;
@@ -1578,7 +1845,7 @@
 			return out;
 		}
 
-		function refreshStage3() {
+		function refreshApprove() {
 			var live = state.status === 'published';
 			var list3 = collectWarnings();
 
@@ -1589,9 +1856,7 @@
 						type: 'button',
 						className: 'tbtd-linkbtn',
 						text: w.text,
-						onclick: function () {
-							w.item.dom.row.scrollIntoView( { behavior: 'smooth', block: 'center' } );
-						}
+						onclick: function () { showItem( w.item ); }
 					} )
 				] ) );
 			} );
@@ -1626,12 +1891,11 @@
 			return {
 				id: state.id || 0,
 				title: titleInput.value,
-				context: contextInput.value,
 				class_id: classIdField ? parseInt( classIdField.value, 10 ) || 0 : 0,
 				lesson_id: ( lessonSelect && lessonWrap && ! lessonWrap.hidden ) ? parseInt( lessonSelect.value, 10 ) || 0 : 0,
 				status: status,
 				items: state.items.filter( function ( item ) {
-					return item.en.text || item.pl.text;
+					return hasText( item ) || item.pl.text;
 				} ).map( function ( item ) {
 					return { en: serialize( item.en ), pl: serialize( item.pl ), note: item.note };
 				} )
@@ -1660,7 +1924,7 @@
 				var blocking = list3.filter( function ( w ) { return w.blocking; } );
 				if ( blocking.length ) {
 					showError( errorBox, blocking[ 0 ].text );
-					blocking[ 0 ].item.dom.row.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+					showItem( blocking[ 0 ].item );
 					return;
 				}
 				if ( list3.length && ! window.confirm( t.unpairedConfirm ) ) {
@@ -1694,7 +1958,7 @@
 				} else {
 					savedMsg.textContent = t.savedDraft;
 				}
-				refreshStage3();
+				refreshApprove();
 				if ( status === 'published' && ! share.hidden ) {
 					share.scrollIntoView( { behavior: 'smooth', block: 'center' } );
 				}
@@ -1723,11 +1987,15 @@
 			initial.items.forEach( function ( it ) {
 				addItem( newItem( it.en, it.pl, it.note, true ), false );
 			} );
-		} else {
-			addItem( newItem(), false );
 		}
+		// Defaults: a new drill on "Generate with AI", a saved one on "Write
+		// my own". The markup says the same; this keeps a restored form honest.
+		$( initial ? 'mode-own' : 'mode-ai' ).checked = true;
+		refreshMode();
+		refreshClassHelp();
+		renumber();
 		setBusy( false );
-		refreshStage3();
+		refreshApprove();
 		state.dirty = false;
 	}
 

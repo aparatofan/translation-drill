@@ -53,6 +53,16 @@ class TBTD_Rest {
 
 		register_rest_route(
 			self::NS,
+			'/manage/generate',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'permission_callback' => array( $this, 'can_manage' ),
+				'callback'            => array( $this, 'generate' ),
+			)
+		);
+
+		register_rest_route(
+			self::NS,
 			'/manage/drills',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -108,7 +118,24 @@ class TBTD_Rest {
 		$sentences = $request->get_param( 'sentences' );
 		$result    = TBTD_Translator::translate(
 			is_array( $sentences ) ? $sentences : array(),
-			(string) $request->get_param( 'context' ),
+			'',
+			get_current_user_id()
+		);
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/**
+	 * Write new English sentences for the Content stage.
+	 */
+	public function generate( WP_REST_Request $request ) {
+		$result = TBTD_Translator::generate(
+			array(
+				'count'      => $request->get_param( 'count' ),
+				'level'      => $request->get_param( 'level' ),
+				'vocabulary' => $request->get_param( 'vocabulary' ),
+				'grammar'    => $request->get_param( 'grammar' ),
+				'avoid'      => $request->get_param( 'avoid' ),
+			),
 			get_current_user_id()
 		);
 		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
@@ -159,9 +186,11 @@ class TBTD_Rest {
 			}
 		}
 
+		// The builder no longer edits the context line (1.6.0). Keep whatever an
+		// existing drill stored; a new drill starts empty.
 		$fields = array(
 			'title'     => $title,
-			'context'   => mb_substr( sanitize_text_field( (string) $request->get_param( 'context' ) ), 0, 500 ),
+			'context'   => $drill ? (string) $drill->context : '',
 			'status'    => $status,
 			'class_id'  => $attachment['class_id'],
 			'lesson_id' => $attachment['lesson_id'],

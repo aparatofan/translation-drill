@@ -63,10 +63,75 @@ class TBTD_API {
 	 * Translate a batch of highlighted English sentences into Polish.
 	 *
 	 * @param string[] $en      English markup, one per sentence, already sanitised.
-	 * @param string   $context The teacher's context line for the drill, or ''.
+	 * @param string   $context Unused since 1.6.0 (callers pass ''); kept for safety.
 	 * @return array|WP_Error List of ['pl','note','missing'] in input order.
 	 */
 	public static function translate( array $en, $context = '' ) {
+		$text = self::chat( self::system_prompt(), self::user_prompt( $en, $context ), 8192 );
+		if ( is_wp_error( $text ) ) {
+			return $text;
+		}
+
+		$result = TBTD_Markup::parse_ai_items( $text, $en );
+
+		if ( 'count' === $result ) {
+			return new WP_Error(
+				'tbtd_count_mismatch',
+				__( 'The AI returned a different number of sentences than it was sent. Nothing was changed — please try again.', 'translation-drill' )
+			);
+		}
+		if ( ! is_array( $result ) ) {
+			return new WP_Error(
+				'tbtd_parse_error',
+				__( 'The AI answer could not be read. Nothing was changed — please try again.', 'translation-drill' )
+			);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Write new English sentences for the teacher to review. English only:
+	 * the Polish still comes from translate(), after the teacher highlights.
+	 *
+	 * @param int      $count      Sentences wanted, already validated (3–10).
+	 * @param string   $level      CEFR level, already validated.
+	 * @param string   $vocabulary Vocabulary area, sanitised, or ''.
+	 * @param string   $grammar    Grammar topic, sanitised, or ''.
+	 * @param string[] $avoid      Plain English sentences already in the drill.
+	 * @return string[]|WP_Error
+	 */
+	public static function generate( $count, $level, $vocabulary, $grammar, array $avoid ) {
+		$count = (int) $count;
+		$text  = self::chat(
+			self::generate_system_prompt(),
+			self::generate_user_prompt( $count, $level, $vocabulary, $grammar, $avoid ),
+			2048
+		);
+		if ( is_wp_error( $text ) ) {
+			return $text;
+		}
+
+		$result = TBTD_Markup::parse_ai_sentences( $text, $count );
+		if ( ! is_array( $result ) ) {
+			return new WP_Error(
+				'tbtd_parse_error',
+				__( 'The AI answer could not be read. Nothing was changed — please try again.', 'translation-drill' )
+			);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * One Chat Completions call with a JSON-object answer.
+	 *
+	 * @param string $system     System prompt.
+	 * @param string $user       User prompt.
+	 * @param int    $max_tokens Completion token cap.
+	 * @return string|WP_Error The message content.
+	 */
+	private static function chat( $system, $user, $max_tokens ) {
 		$api_key = self::api_key();
 		if ( '' === $api_key ) {
 			return new WP_Error(
@@ -86,16 +151,16 @@ class TBTD_API {
 				'body'    => wp_json_encode(
 					array(
 						'model'                 => self::model(),
-						'max_completion_tokens' => 8192,
+						'max_completion_tokens' => (int) $max_tokens,
 						'response_format'       => array( 'type' => 'json_object' ),
 						'messages'              => array(
 							array(
 								'role'    => 'system',
-								'content' => self::system_prompt(),
+								'content' => $system,
 							),
 							array(
 								'role'    => 'user',
-								'content' => self::user_prompt( $en, $context ),
+								'content' => $user,
 							),
 						),
 					)
@@ -130,23 +195,7 @@ class TBTD_API {
 			);
 		}
 
-		$text   = isset( $body['choices'][0]['message']['content'] ) ? (string) $body['choices'][0]['message']['content'] : '';
-		$result = TBTD_Markup::parse_ai_items( $text, $en );
-
-		if ( 'count' === $result ) {
-			return new WP_Error(
-				'tbtd_count_mismatch',
-				__( 'The AI returned a different number of sentences than it was sent. Nothing was changed — please try again.', 'translation-drill' )
-			);
-		}
-		if ( ! is_array( $result ) ) {
-			return new WP_Error(
-				'tbtd_parse_error',
-				__( 'The AI answer could not be read. Nothing was changed — please try again.', 'translation-drill' )
-			);
-		}
-
-		return $result;
+		return isset( $body['choices'][0]['message']['content'] ) ? (string) $body['choices'][0]['message']['content'] : '';
 	}
 
 	/**
@@ -198,5 +247,65 @@ class TBTD_API {
 			: '';
 
 		return $intro . 'English sentences (' . count( $lines ) . "):\n" . implode( "\n", $lines );
+	}
+
+	/**
+	 * The fixed instructions for writing sentences.
+	 *
+	 * Each sentence becomes a target answer that students must produce from
+	 * the Polish, so it has to be something a real person would say. The
+	 * failure this guards against is the "textbook" sentence with a linking
+	 * word or a structure squeezed in to show grammar off — nic na siłę.
+	 *
+	 * @return string
+	 */
+	private static function generate_system_prompt() {
+		return "You write English sentences for a Polish teacher of English. Adult Polish students will later see each sentence "
+			. "translated into Polish and must say the English. So each sentence you write is a target answer.\n\n"
+			. "Rules:\n"
+			. "1. Write exactly the number of sentences asked for, at the CEFR level asked for. Vocabulary and grammar must fit the "
+			. "level, and so must sentence length: short and simple at A1–A2, longer only where the level allows it.\n"
+			. "2. If a vocabulary area is given, every sentence belongs to it. If a grammar topic is given, every sentence uses it, "
+			. "naturally.\n"
+			. "3. Each sentence contains at least one useful expression, collocation or phrase worth practising.\n"
+			. "4. Use simple, natural, everyday spoken English that a real person would actually say. One clear idea per sentence. "
+			. "Do not force in linking words such as \"although\", \"while\" or \"whereas\", and do not squeeze in structures just to "
+			. "show the grammar. Nothing forced.\n"
+			. "5. Vary the subjects and the openings: not every sentence starts with \"I\".\n"
+			. "6. Use British English spelling, and contractions where they are natural.\n"
+			. "7. Never use square brackets or the | character.\n"
+			. "8. Do not repeat or closely paraphrase any sentence in the avoid list.\n\n"
+			. "Return ONLY a JSON object, no markdown: {\"sentences\":[\"...\",\"...\"]}";
+	}
+
+	/**
+	 * The per-request part of a generate call.
+	 *
+	 * @param int      $count      Sentences wanted.
+	 * @param string   $level      CEFR level.
+	 * @param string   $vocabulary Vocabulary area or ''.
+	 * @param string   $grammar    Grammar topic or ''.
+	 * @param string[] $avoid      Sentences not to repeat.
+	 * @return string
+	 */
+	private static function generate_user_prompt( $count, $level, $vocabulary, $grammar, array $avoid ) {
+		$vocabulary = trim( (string) $vocabulary );
+		$grammar    = trim( (string) $grammar );
+
+		$out  = "Level: {$level}\n";
+		$out .= 'Number of sentences: ' . (int) $count . "\n";
+		$out .= 'Vocabulary area: ' . ( '' !== $vocabulary ? $vocabulary : 'none — general everyday topics' ) . "\n";
+		$out .= 'Grammar topic: ' . ( '' !== $grammar ? $grammar : 'none — any grammar natural at this level' ) . "\n";
+
+		$avoid = array_values( $avoid );
+		if ( ! empty( $avoid ) ) {
+			$lines = array();
+			foreach ( $avoid as $i => $sentence ) {
+				$lines[] = ( $i + 1 ) . '. ' . $sentence;
+			}
+			$out .= "\nAvoid list (already in the drill):\n" . implode( "\n", $lines );
+		}
+
+		return $out;
 	}
 }

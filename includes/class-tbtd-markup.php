@@ -380,6 +380,59 @@ class TBTD_Markup {
 	}
 
 	/**
+	 * Read a generate answer: {"sentences":["…", …]}.
+	 *
+	 * Lenient about the edges (fences, prose around the JSON, stray items),
+	 * strict about the result: plain English only, markup characters
+	 * neutralised as clean_text() does, no empties, no duplicates, at most
+	 * $count sentences.
+	 *
+	 * @param string $text  Raw completion text.
+	 * @param int    $count Most sentences to keep.
+	 * @return string[]|string The sentences, or the error code 'parse'.
+	 */
+	public static function parse_ai_sentences( $text, $count ) {
+		$text = trim( (string) $text );
+		$text = preg_replace( '/^```(?:json)?\s*/i', '', $text );
+		$text = preg_replace( '/\s*```$/', '', (string) $text );
+
+		$data = json_decode( (string) $text, true );
+		if ( ! is_array( $data ) ) {
+			$start = strpos( (string) $text, '{' );
+			$end   = strrpos( (string) $text, '}' );
+			if ( false !== $start && false !== $end && $end > $start ) {
+				$data = json_decode( substr( (string) $text, $start, $end - $start + 1 ), true );
+			}
+		}
+		if ( ! is_array( $data ) || ! isset( $data['sentences'] ) || ! is_array( $data['sentences'] ) ) {
+			return 'parse';
+		}
+
+		$out  = array();
+		$seen = array();
+		foreach ( $data['sentences'] as $sentence ) {
+			if ( count( $out ) >= (int) $count ) {
+				break;
+			}
+			if ( ! is_string( $sentence ) ) {
+				continue;
+			}
+			$clean = self::clean_text( $sentence );
+			if ( mb_strlen( $clean ) > self::MAX_TEXT ) {
+				$clean = rtrim( mb_substr( $clean, 0, self::MAX_TEXT ) );
+			}
+			$key = mb_strtolower( $clean );
+			if ( '' === $clean || isset( $seen[ $key ] ) ) {
+				continue;
+			}
+			$seen[ $key ] = true;
+			$out[]        = $clean;
+		}
+
+		return empty( $out ) ? 'parse' : $out;
+	}
+
+	/**
 	 * Strip markup characters left outside a well-formed highlight.
 	 *
 	 * @param string $s Fragment.

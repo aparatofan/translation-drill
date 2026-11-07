@@ -7,7 +7,9 @@ Polish → English sentence translation drills for live lessons. Replaces the Wo
 
 ## How it works
 
-1. The teacher writes **English** sentences — the answers — on the teacher page, and highlights the key expressions from the lesson: click a word, or drag across several, and the highlight is added on release (up to four per sentence, each in its own colour). It is the same gesture TBT Drag & Drop uses for gaps. Each highlight appears as a chip with × to remove it.
+1. The teacher builds the drill on the teacher page in four stages: **Details** (title, optional class and lesson; no class means an open drill), **Content**, **Highlight**, and **Approve and share**.
+   - **Content** collects the **English** sentences — the answers — in one editable list, filled two ways that can be mixed freely: **Write my own** (type a sentence per row, Enter starts the next, or paste several at once, with `[expression|n]` marks if wanted) and **Generate with AI** (3–10 sentences at a CEFR level A1–C2, with an optional vocabulary area and grammar topic). Generated sentences are added to the list, never replace it, and avoid repeating what is already there. The AI writes English only. A new drill opens on *Generate with AI*; a saved one on *Write my own*.
+   - **Highlight** opens on *Continue to highlighting* (already open for a saved drill) and shows every sentence that has English. The teacher highlights the key expressions from the lesson: click a word, or drag across several, and the highlight is added on release (up to four per sentence, each in its own colour). It is the same gesture TBT Drag & Drop uses for gaps. Each highlight appears as a chip with × to remove it. Edits in Content show up here straight away.
 2. **Translate** sends the sentences to OpenAI in one call. The AI writes a natural Polish sentence for each, marks the Polish words that express each highlighted expression in the same colour, and drafts a one-line language note.
 3. The teacher **reviews**: edits the Polish, fixes the note, and adds missing Polish highlights the same way — click or drag the Polish words, and they pair with the first English colour that has no partner yet (or the one chosen, when several are missing). A range touching an existing highlight is refused with a message. Rows whose English changed after translation are flagged.
 4. **Approve and publish** gives a link and a QR code. The link never changes, even when the drill is edited later.
@@ -68,13 +70,13 @@ A Polish highlight can only use a number the English has. An English highlight w
 **TBT → Translation Drill Settings → AI usage limits**:
 
 - **Sentences per translation** — default 30, hard maximum 60. Longer drills are sent in parts automatically.
-- **Translations per teacher per day** — default 40; 0 for no limit. Translating one row again counts as one. Failed calls cost nothing.
+- **Translations per teacher per day** — default 40; 0 for no limit. Translating one row again counts as one. One **Generate sentences** request also counts as one, on the same counter (the teacher page shows "AI requests left today"). Failed calls cost nothing.
 - One teacher can be given a different daily limit with the user meta key `tbtd_max_translations_per_day`.
 
 ## Security
 
 - The OpenAI key is stored in `wp_options` and never printed to a page or returned by any route.
-- Every REST route needs `tbtd_manage` and a `wp_rest` nonce; anything touching a drill also checks ownership.
+- Every REST route needs `tbtd_manage` and a `wp_rest` nonce; anything touching a drill also checks ownership. This includes `POST manage/generate`, which validates its input server side (3–10 sentences, a known level, short topic fields) and goes through the same daily limit as translation.
 - There is **no public read route**. Drill content reaches students only inside the server-rendered student page, after the login check.
 - Attaching to a class checks the teacher owns it, and a lesson must belong to that class.
 - Input is sanitised on save (`TBTD_Markup`), output escaped on render, every query uses `$wpdb->prepare()`.

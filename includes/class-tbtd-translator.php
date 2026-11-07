@@ -1,8 +1,8 @@
 <?php
 /**
- * The one translation path. The REST route calls translate() and nothing
- * calls TBTD_API::translate() directly, so a quota or validation fix cannot
- * land in one place and miss another.
+ * The one AI path. The REST routes call translate() and generate(), and
+ * nothing calls TBTD_API directly, so a quota or validation fix cannot land
+ * in one place and miss another. Both share one daily counter.
  *
  * Every limit is enforced here, server side, before the API call. The teacher
  * page pre-checks the sentence count for UX only and is never the gate.
@@ -26,6 +26,16 @@ class TBTD_Translator {
 
 	/** User meta that overrides the global daily limit for one user. */
 	const LIMIT_META = 'tbtd_max_translations_per_day';
+
+	/** Sentences one generate request may ask for. */
+	const GENERATE_MIN = 3;
+	const GENERATE_MAX = 10;
+
+	/** CEFR levels a generate request may ask for. */
+	const LEVELS = array( 'A1', 'A2', 'B1', 'B2', 'C1', 'C2' );
+
+	/** Existing sentences passed to the AI as "do not repeat". */
+	const AVOID_MAX = 100;
 
 	/**
 	 * Configured maximum sentences per request.
@@ -94,7 +104,7 @@ class TBTD_Translator {
 	 * moves only after a successful answer — a failed call costs no quota.
 	 *
 	 * @param array  $sentences Raw English markup strings.
-	 * @param string $context   Raw context line.
+	 * @param string $context   Raw context line. The teacher page sends '' since 1.6.0.
 	 * @param int    $user_id   Requesting user.
 	 * @return array|WP_Error array( 'items' => [...], 'remaining' => int|null )
 	 */
@@ -146,6 +156,77 @@ class TBTD_Translator {
 
 		return array(
 			'items'     => $result,
+			'remaining' => self::remaining( $user_id ),
+		);
+	}
+
+	/**
+	 * Write English sentences for one teacher. Same order and quota as
+	 * translate(): one successful request counts as one; a failure is free.
+	 *
+	 * @param array $args    Raw count, level, vocabulary, grammar, avoid.
+	 * @param int   $user_id Requesting user.
+	 * @return array|WP_Error array( 'sentences' => [...], 'remaining' => int|null )
+	 */
+	public static function generate( array $args, $user_id ) {
+		if ( ! TBTD_Capabilities::user_can_manage( $user_id ) ) {
+			return new WP_Error( 'tbtd_forbidden', __( 'You are not allowed to do that.', 'translation-drill' ), array( 'status' => 403 ) );
+		}
+
+		$count = isset( $args['count'] ) && is_numeric( $args['count'] ) ? (int) $args['count'] : 0;
+		if ( $count < self::GENERATE_MIN || $count > self::GENERATE_MAX ) {
+			return new WP_Error(
+				'tbtd_bad_count',
+				sprintf(
+					/* translators: 1: minimum, 2: maximum */
+					__( 'Choose between %1$d and %2$d sentences.', 'translation-drill' ),
+					self::GENERATE_MIN,
+					self::GENERATE_MAX
+				),
+				array( 'status' => 400 )
+			);
+		}
+
+		$level = isset( $args['level'] ) && is_string( $args['level'] ) ? strtoupper( trim( $args['level'] ) ) : '';
+		if ( ! in_array( $level, self::LEVELS, true ) ) {
+			return new WP_Error( 'tbtd_bad_level', __( 'Choose a level from A1 to C2.', 'translation-drill' ), array( 'status' => 400 ) );
+		}
+
+		$vocabulary = mb_substr( sanitize_text_field( is_string( $args['vocabulary'] ?? null ) ? $args['vocabulary'] : '' ), 0, 200 );
+		$grammar    = mb_substr( sanitize_text_field( is_string( $args['grammar'] ?? null ) ? $args['grammar'] : '' ), 0, 200 );
+
+		$avoid = array();
+		if ( isset( $args['avoid'] ) && is_array( $args['avoid'] ) ) {
+			foreach ( $args['avoid'] as $sentence ) {
+				if ( count( $avoid ) >= self::AVOID_MAX ) {
+					break;
+				}
+				if ( ! is_string( $sentence ) ) {
+					continue;
+				}
+				$plain = mb_substr( TBTD_Markup::plain( TBTD_Markup::sanitize( $sentence ) ), 0, 400 );
+				if ( '' !== $plain ) {
+					$avoid[] = $plain;
+				}
+			}
+		}
+
+		$remaining = self::remaining( $user_id );
+		if ( null !== $remaining && $remaining <= 0 ) {
+			return new WP_Error( 'tbtd_quota', __( 'You\'ve used today\'s AI limit. Try again tomorrow.', 'translation-drill' ), array( 'status' => 429 ) );
+		}
+
+		$result = TBTD_API::generate( $count, $level, $vocabulary, $grammar, $avoid );
+		if ( is_wp_error( $result ) ) {
+			$result->add_data( array( 'status' => 502 ) );
+			return $result;
+		}
+
+		$key = self::count_meta_key();
+		update_user_meta( (int) $user_id, $key, (int) get_user_meta( (int) $user_id, $key, true ) + 1 );
+
+		return array(
+			'sentences' => $result,
 			'remaining' => self::remaining( $user_id ),
 		);
 	}

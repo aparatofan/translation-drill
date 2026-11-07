@@ -122,5 +122,18 @@ same( TBTD_Markup::parse_ai_items( '{"items":{"a":1}}', $batch ), 'parse', 'pars
 $empty_pl = json_encode( array( 'items' => array( array( 'pl' => '', 'note' => '' ), array( 'pl' => 'x', 'note' => '' ) ) ) );
 same( TBTD_Markup::parse_ai_items( $empty_pl, $batch ), 'parse', 'parse_ai_items: an empty Polish sentence is a parse error' );
 
+/* ---------- parse_ai_sentences ---------- */
+
+$res = TBTD_Markup::parse_ai_sentences( '{"sentences":["Could you give me a hand?","She\'s been off sick all week.","We\'re running late."]}', 6 );
+same( $res, array( 'Could you give me a hand?', "She's been off sick all week.", "We're running late." ), 'parse_ai_sentences: a valid answer' );
+same( count( TBTD_Markup::parse_ai_sentences( '{"sentences":["One.","Two.","Three.","Four."]}', 3 ) ), 3, 'parse_ai_sentences: extra items trimmed to count' );
+same( TBTD_Markup::parse_ai_sentences( '{"sentences":["Take [a break|1] now | please."]}', 3 ), array( 'Take (a break/1) now / please.' ), 'parse_ai_sentences: brackets and pipe neutralised' );
+same( TBTD_Markup::parse_ai_sentences( '{"sentences":[42,null,["x"],"  ","Keep this one."]}', 3 ), array( 'Keep this one.' ), 'parse_ai_sentences: non-strings and empties dropped' );
+same( TBTD_Markup::parse_ai_sentences( '{"sentences":["Same again.","same  again.","Different."]}', 3 ), array( 'Same again.', 'Different.' ), 'parse_ai_sentences: duplicates dropped' );
+same( TBTD_Markup::parse_ai_sentences( "```json\n{\"sentences\":[\"Fenced.\"]}\n```", 3 ), array( 'Fenced.' ), 'parse_ai_sentences: fences tolerated' );
+same( TBTD_Markup::parse_ai_sentences( '{"sentences":["Broken"', 3 ), 'parse', 'parse_ai_sentences: broken JSON is a failure' );
+same( TBTD_Markup::parse_ai_sentences( '{"items":["Wrong key."]}', 3 ), 'parse', 'parse_ai_sentences: missing key is a failure' );
+same( TBTD_Markup::parse_ai_sentences( '{"sentences":[1,""]}', 3 ), 'parse', 'parse_ai_sentences: nothing usable is a failure' );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 exit( $fail ? 1 : 0 );
