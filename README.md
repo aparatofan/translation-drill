@@ -11,9 +11,10 @@ Polish → English sentence translation drills for live lessons. Replaces the Wo
 2. **Translate** sends the sentences to OpenAI in one call. The AI writes a natural Polish sentence for each, marks the Polish words that express each highlighted expression in the same colour, and drafts a one-line language note.
 3. The teacher **reviews**: edits the Polish, fixes the note, and adds missing Polish highlights the same way — click or drag the Polish words, and they pair with the first English colour that has no partner yet (or the one chosen, when several are missing). A range touching an existing highlight is refused with a message. Rows whose English changed after translation are flagged.
 4. **Approve and publish** gives a link and a QR code. The link never changes, even when the drill is edited later.
-5. Students (logged in) see one Polish sentence at a time:
-   - **Hint** (`H`) lists each highlighted Polish expression with its English gapped — `p___ your b____` — and a tap reveals it.
-   - **Show answer** (`A`) shows the English with the same colours, the student's own attempt if they typed one, and the note.
+5. Students (logged in) see one Polish sentence at a time, in three numbered steps. They say the translation out loud; there is no typing box.
+   - **Polish sentence**, with the key expressions highlighted.
+   - **Translate phrases**, always open: each highlighted Polish expression with its English gapped — `p___ your b____`. A sentence without highlights skips this step.
+   - **Model answer** (`A`) shows the English with the same colours and the note. When TBT Flashcards is active with an ElevenLabs key, **Listen** (`P`) reads the English in the Flashcards voice, through Flashcards' own audio proxy and cache.
    - `←` `→` move between sentences.
 
 Nothing is scored or stored about students. The page remembers which sentence a student reached, in their browser only.
