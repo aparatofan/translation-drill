@@ -130,7 +130,7 @@ class TBTD_Teacher {
 			'allTranslated'    => __( 'All sentences translated', 'translation-drill' ),
 			'translating'      => __( 'Translating — this can take up to a minute…', 'translation-drill' ),
 			/* translators: %d: translations left today */
-			'remaining'        => __( '%d translations left today', 'translation-drill' ),
+			'remaining'        => __( '%d AI requests left today', 'translation-drill' ),
 			'noSentences'      => __( 'Add at least one sentence.', 'translation-drill' ),
 			'emptySentence'    => __( 'One of the sentences is empty. Write it or remove it.', 'translation-drill' ),
 			/* translators: %d: maximum sentences */
@@ -142,17 +142,41 @@ class TBTD_Teacher {
 			'published'        => __( 'Published. Share the link or the QR code with your students.', 'translation-drill' ),
 			/* translators: %d: sentence number */
 			'missingPl'        => __( 'Sentence %d has no Polish version yet.', 'translation-drill' ),
+			/* translators: %d: sentence number in Stage 2 */
+			'missingEn'        => __( 'Sentence %d in Stage 2 has Polish but no English.', 'translation-drill' ),
 			/* translators: 1: sentence number, 2: English fragment */
 			'unpairedLine'     => __( 'Sentence %1$d: no Polish highlight for “%2$s”', 'translation-drill' ),
 			'unpairedConfirm'  => __( 'Some highlights have no Polish partner, so their hints will show the English only. Publish anyway?', 'translation-drill' ),
 			'confirmRemove'    => __( 'Remove this sentence?', 'translation-drill' ),
+			/* translators: %d: number of sentences */
+			'confirmRemoveAll' => __( 'Remove all %d sentences?', 'translation-drill' ),
+			// Content stage.
+			/* translators: %d: sentence number */
+			'sentenceLabel'    => __( 'Sentence %d', 'translation-drill' ),
+			'sentence1'        => __( '1 sentence', 'translation-drill' ),
+			/* translators: %d: number of sentences */
+			'sentenceN'        => __( '%d sentences', 'translation-drill' ),
+			'aiTag'            => __( 'AI', 'translation-drill' ),
+			'aiTagTitle'       => __( 'Written by the AI', 'translation-drill' ),
+			/* translators: 1: number of sentences, 2: CEFR level */
+			'generating'       => __( 'Writing %1$d sentences at %2$s…', 'translation-drill' ),
+			'generated1'       => __( 'Added 1 sentence. Edit or remove it before you continue.', 'translation-drill' ),
+			/* translators: %d: number of sentences */
+			'generatedN'       => __( 'Added %d sentences. Edit or remove any before you continue.', 'translation-drill' ),
+			/* translators: 1: sentences added, 2: sentences written, 3: maximum sentences per drill */
+			'generatedPart'    => __( 'Added %1$d of %2$d sentences: a drill can hold up to %3$d.', 'translation-drill' ),
+			'continueReady'    => __( 'Happy with the list? Highlight the key expressions next.', 'translation-drill' ),
+			'continueEmpty'    => __( 'Add at least one sentence to continue.', 'translation-drill' ),
+			'continueOpen'     => __( 'Changes here show up in Stage 3 straight away.', 'translation-drill' ),
+			'classNone'        => __( 'No class: the drill stays open. Anyone logged in to TBT can use the link.', 'translation-drill' ),
+			'classSet'         => __( 'The drill is listed under this class. The link still works for anyone logged in.', 'translation-drill' ),
 			'confirmDelete'    => __( 'Delete this drill and all its sentences? This cannot be undone.', 'translation-drill' ),
 			'confirmLeave'     => __( 'You have unsaved changes.', 'translation-drill' ),
 			'unpublishConfirm' => __( 'Move this drill back to drafts? Students will no longer be able to open it.', 'translation-drill' ),
 			'copied'           => __( 'Copied!', 'translation-drill' ),
 			'copy'             => __( 'Copy link', 'translation-drill' ),
 			'staleNonce'       => __( 'Your session has expired. Refresh the page.', 'translation-drill' ),
-			'quota'            => __( 'You\'ve used today\'s translation limit.', 'translation-drill' ),
+			'quota'            => __( 'You\'ve used today\'s AI limit. Try again tomorrow.', 'translation-drill' ),
 			'networkError'     => __( 'Something went wrong. Check your connection and try again.', 'translation-drill' ),
 			'noPlayerPage'     => __( 'Saved, but an administrator has not chosen the student page yet, so there is no link.', 'translation-drill' ),
 			'noLesson'         => __( 'Any lesson', 'translation-drill' ),
@@ -583,8 +607,8 @@ class TBTD_Teacher {
 	}
 
 	/**
-	 * The three-stage builder. Rows are drawn by teacher.js from the JSON
-	 * below; everything static is here.
+	 * The four-stage builder: details, content, highlight, approve. Rows are
+	 * drawn by teacher.js from the JSON below; everything static is here.
 	 *
 	 * @param array|null $drill Drill payload, or null for a new drill.
 	 */
@@ -607,6 +631,18 @@ class TBTD_Teacher {
 		$lesson_id    = $drill ? (int) $drill['lesson_id'] : 0;
 		$lesson_known = $lesson_id > 0 && in_array( $lesson_id, array_map( 'intval', array_column( $lessons, 'id' ) ), true );
 		$max       = TBTD_Translator::max_sentences();
+		// A new drill opens on the AI composer and waits for "Continue" before
+		// Stage 3; an existing one opens on its own sentences, Stage 3 open.
+		$is_new     = ! $drill;
+		$has_items  = $drill && ! empty( $drill['items'] );
+		$levels     = array(
+			'A1' => __( 'elementary', 'translation-drill' ),
+			'A2' => __( 'pre-intermediate', 'translation-drill' ),
+			'B1' => __( 'intermediate', 'translation-drill' ),
+			'B2' => __( 'upper-intermediate', 'translation-drill' ),
+			'C1' => __( 'advanced', 'translation-drill' ),
+			'C2' => __( 'proficient', 'translation-drill' ),
+		);
 		?>
 		<?php $this->render_backlink(); ?>
 
@@ -619,7 +655,7 @@ class TBTD_Teacher {
 				<div class="tbtd-stage-card">
 					<div class="tbtd-stage-head">
 						<h2 class="tbtd-stage-title"><b>1</b> <?php esc_html_e( 'Details', 'translation-drill' ); ?></h2>
-						<p class="tbtd-stage-sub"><?php esc_html_e( 'Name the drill and tell the AI who it is for.', 'translation-drill' ); ?></p>
+						<p class="tbtd-stage-sub"><?php esc_html_e( 'Name the drill and, if you like, attach it to a class.', 'translation-drill' ); ?></p>
 					</div>
 
 					<div class="tbtd-field">
@@ -632,7 +668,7 @@ class TBTD_Teacher {
 					<?php if ( TBTD_Classes::available() && $classes ) : ?>
 						<div class="tbtd-pair">
 							<div class="tbtd-field">
-								<label class="tbtd-label" for="tbtd-class"><?php esc_html_e( 'Class', 'translation-drill' ); ?></label>
+								<label class="tbtd-label" for="tbtd-class"><?php esc_html_e( 'Class', 'translation-drill' ); ?> <span class="tbtd-optional"><?php esc_html_e( 'optional', 'translation-drill' ); ?></span></label>
 								<?php
 								/*
 								 * A text field bound to a datalist rather than a select,
@@ -653,6 +689,7 @@ class TBTD_Teacher {
 									<?php endforeach; ?>
 								</datalist>
 								<input type="hidden" data-role="class-id" value="<?php echo $class_id ? (int) $class_id : ''; ?>">
+								<p class="tbtd-help" data-role="class-help"></p>
 								<p class="tbtd-help" data-role="class-hint" hidden>
 									<strong><?php esc_html_e( 'No class matches that. Pick one from the list, or clear the field to save without a class.', 'translation-drill' ); ?></strong>
 								</p>
@@ -678,50 +715,145 @@ class TBTD_Teacher {
 						</div>
 					<?php endif; ?>
 
-					<div class="tbtd-field">
-						<label class="tbtd-label" for="tbtd-context"><?php esc_html_e( 'Context for the AI', 'translation-drill' ); ?> <span class="tbtd-optional"><?php esc_html_e( 'optional', 'translation-drill' ); ?></span></label>
-						<input type="text" class="tbtd-input" id="tbtd-context" maxlength="500" data-role="context"
-							placeholder="<?php esc_attr_e( 'e.g. School psychologists talking to colleagues and parents', 'translation-drill' ); ?>"
-							value="<?php echo esc_attr( $drill ? $drill['context'] : '' ); ?>">
-						<p class="tbtd-help"><?php esc_html_e( 'Helps the AI choose the right Polish words and register. Students never see it.', 'translation-drill' ); ?></p>
-					</div>
 				</div>
 			</section>
 
 			<section class="tbtd-stage" data-stage="2">
 				<div class="tbtd-stage-card">
 					<div class="tbtd-stage-head">
-						<h2 class="tbtd-stage-title"><b>2</b> <?php esc_html_e( 'Sentences', 'translation-drill' ); ?></h2>
-						<p class="tbtd-stage-sub"><?php esc_html_e( 'Write the English answers, highlight the key expressions, then translate. Check every Polish sentence before you publish.', 'translation-drill' ); ?></p>
+						<h2 class="tbtd-stage-title"><b>2</b> <?php esc_html_e( 'Content', 'translation-drill' ); ?></h2>
+						<p class="tbtd-stage-sub"><?php esc_html_e( 'Write the English sentences yourself, or let the AI write them. These are the answers students will say.', 'translation-drill' ); ?></p>
 					</div>
 
-					<details class="tbtd-paste" data-role="paste-box">
-						<summary><?php esc_html_e( 'Paste several sentences at once', 'translation-drill' ); ?></summary>
-						<textarea class="tbtd-textarea" id="tbtd-paste" data-role="paste" rows="6"
-							placeholder="<?php esc_attr_e( "One English sentence per line.\nYou can mark expressions now as [expression|1], or highlight them below.", 'translation-drill' ); ?>"></textarea>
-						<button type="button" class="tbtd-btn tbtd-btn--soft" data-role="paste-add"><?php esc_html_e( 'Add these sentences', 'translation-drill' ); ?></button>
-					</details>
+					<?php
+					/*
+					 * Real radios under the tiles, as Swipe's level picker. The
+					 * mode only decides which composer shows; both feed one list.
+					 */
+					?>
+					<fieldset class="tbtd-modes">
+						<legend class="tbtd-sr"><?php esc_html_e( 'How do you want to add sentences?', 'translation-drill' ); ?></legend>
+						<label class="tbtd-tile">
+							<input type="radio" class="tbtd-tile-input" name="tbtd-mode" value="own" data-role="mode-own" <?php checked( ! $is_new ); ?>>
+							<span class="tbtd-tile-box">
+								<span class="tbtd-tile-code"><?php esc_html_e( 'Write my own', 'translation-drill' ); ?></span>
+								<span class="tbtd-tile-name"><?php esc_html_e( 'Type or paste the English sentences.', 'translation-drill' ); ?></span>
+							</span>
+						</label>
+						<label class="tbtd-tile">
+							<input type="radio" class="tbtd-tile-input" name="tbtd-mode" value="ai" data-role="mode-ai" <?php checked( $is_new ); ?>>
+							<span class="tbtd-tile-box">
+								<span class="tbtd-tile-code"><?php esc_html_e( 'Generate with AI', 'translation-drill' ); ?></span>
+								<span class="tbtd-tile-name"><?php esc_html_e( 'Choose the level and topic. The AI writes the sentences.', 'translation-drill' ); ?></span>
+							</span>
+						</label>
+					</fieldset>
 
-					<ol class="tbtd-items" data-role="items"></ol>
+					<div class="tbtd-compose" data-role="compose-ai" <?php echo $is_new ? '' : 'hidden'; ?>>
+						<fieldset class="tbtd-fieldset">
+							<legend class="tbtd-label"><?php esc_html_e( 'How many sentences?', 'translation-drill' ); ?></legend>
+							<div class="tbtd-tiles tbtd-tiles--count">
+								<?php for ( $n = TBTD_Translator::GENERATE_MIN; $n <= TBTD_Translator::GENERATE_MAX; $n++ ) : ?>
+									<label class="tbtd-tile">
+										<input type="radio" class="tbtd-tile-input" name="tbtd-count" value="<?php echo (int) $n; ?>" <?php checked( 6, $n ); ?>>
+										<span class="tbtd-tile-box"><span class="tbtd-tile-code"><?php echo (int) $n; ?></span></span>
+									</label>
+								<?php endfor; ?>
+							</div>
+						</fieldset>
 
-					<button type="button" class="tbtd-btn tbtd-btn--ghost tbtd-add" data-role="add"><?php esc_html_e( '+ Add a sentence', 'translation-drill' ); ?></button>
+						<fieldset class="tbtd-fieldset">
+							<legend class="tbtd-label"><?php esc_html_e( 'Level', 'translation-drill' ); ?></legend>
+							<div class="tbtd-tiles tbtd-tiles--level">
+								<?php foreach ( $levels as $code => $name ) : ?>
+									<label class="tbtd-tile">
+										<input type="radio" class="tbtd-tile-input" name="tbtd-level" value="<?php echo esc_attr( $code ); ?>" <?php checked( 'B1', $code ); ?>>
+										<span class="tbtd-tile-box">
+											<span class="tbtd-tile-code"><?php echo esc_html( $code ); ?></span>
+											<span class="tbtd-tile-name"><?php echo esc_html( $name ); ?></span>
+										</span>
+									</label>
+								<?php endforeach; ?>
+							</div>
+						</fieldset>
+
+						<div class="tbtd-pair">
+							<div class="tbtd-field">
+								<label class="tbtd-label" for="tbtd-vocabulary"><?php esc_html_e( 'Vocabulary area', 'translation-drill' ); ?> <span class="tbtd-optional"><?php esc_html_e( 'optional', 'translation-drill' ); ?></span></label>
+								<input type="text" class="tbtd-input" id="tbtd-vocabulary" maxlength="200" data-role="vocabulary"
+									placeholder="<?php esc_attr_e( 'e.g. talking to parents about a child\'s progress', 'translation-drill' ); ?>">
+							</div>
+							<div class="tbtd-field">
+								<label class="tbtd-label" for="tbtd-grammar"><?php esc_html_e( 'Grammar topic', 'translation-drill' ); ?> <span class="tbtd-optional"><?php esc_html_e( 'optional', 'translation-drill' ); ?></span></label>
+								<input type="text" class="tbtd-input" id="tbtd-grammar" maxlength="200" data-role="grammar"
+									placeholder="<?php esc_attr_e( 'e.g. present perfect', 'translation-drill' ); ?>">
+							</div>
+						</div>
+
+						<div class="tbtd-gen-row">
+							<button type="button" class="tbtd-btn tbtd-btn--primary" data-role="generate"><?php esc_html_e( 'Generate sentences', 'translation-drill' ); ?></button>
+							<p class="tbtd-help" data-role="gen-status" role="status" aria-live="polite"><?php esc_html_e( 'New sentences are added to the list below. Edit or remove any before you continue.', 'translation-drill' ); ?></p>
+						</div>
+					</div>
+
+					<div class="tbtd-compose" data-role="compose-own" <?php echo $is_new ? 'hidden' : ''; ?>>
+						<details class="tbtd-paste" data-role="paste-box">
+							<summary><?php esc_html_e( 'Paste several sentences at once', 'translation-drill' ); ?></summary>
+							<textarea class="tbtd-textarea" id="tbtd-paste" data-role="paste" rows="6"
+								placeholder="<?php esc_attr_e( "One English sentence per line.\nYou can mark expressions now as [expression|1], or highlight them below.", 'translation-drill' ); ?>"></textarea>
+							<button type="button" class="tbtd-btn tbtd-btn--soft" data-role="paste-add"><?php esc_html_e( 'Add these sentences', 'translation-drill' ); ?></button>
+						</details>
+						<p class="tbtd-help tbtd-compose-help"><?php esc_html_e( 'Type one English sentence per row below. Press Enter to start the next one.', 'translation-drill' ); ?></p>
+					</div>
+
+					<div class="tbtd-list-head">
+						<h3 class="tbtd-list-title"><?php esc_html_e( 'Your sentences', 'translation-drill' ); ?></h3>
+						<span class="tbtd-list-count" data-role="list-count"></span>
+						<span class="tbtd-list-rule" aria-hidden="true"></span>
+					</div>
+					<ol class="tbtd-srows" data-role="srows"></ol>
+					<div class="tbtd-list-empty" data-role="list-empty" hidden><?php esc_html_e( 'No sentences yet. Generate some above, or add your own.', 'translation-drill' ); ?></div>
+					<div class="tbtd-list-tools">
+						<button type="button" class="tbtd-btn tbtd-btn--ghost tbtd-add" data-role="add"><?php esc_html_e( '+ Add a sentence', 'translation-drill' ); ?></button>
+						<button type="button" class="tbtd-linkbtn" data-role="remove-all" hidden><?php esc_html_e( 'Remove all', 'translation-drill' ); ?></button>
+					</div>
 
 					<div class="tbtd-translate-bar">
-						<button type="button" class="tbtd-btn tbtd-btn--primary" data-role="translate"><?php esc_html_e( 'Translate', 'translation-drill' ); ?></button>
-						<p class="tbtd-help" data-role="translate-status">
-							<?php
-							/* translators: %d: maximum sentences per translation */
-							echo esc_html( sprintf( __( 'Up to %d sentences go to the AI at a time; longer drills are sent in parts.', 'translation-drill' ), $max ) );
-							?>
-						</p>
+						<button type="button" class="tbtd-btn tbtd-btn--primary" data-role="continue" <?php echo $has_items ? 'hidden' : ''; ?>><?php esc_html_e( 'Continue to highlighting', 'translation-drill' ); ?></button>
+						<p class="tbtd-help" data-role="continue-help"></p>
 					</div>
 				</div>
 			</section>
 
-			<section class="tbtd-stage" data-stage="3">
+			<section class="tbtd-stage" data-stage="3" data-role="stage-highlight" data-state="<?php echo $has_items ? 'active' : 'waiting'; ?>">
 				<div class="tbtd-stage-card">
 					<div class="tbtd-stage-head">
-						<h2 class="tbtd-stage-title"><b>3</b> <?php esc_html_e( 'Approve and share', 'translation-drill' ); ?></h2>
+						<h2 class="tbtd-stage-title"><b>3</b> <?php esc_html_e( 'Highlight', 'translation-drill' ); ?></h2>
+						<p class="tbtd-stage-sub"><?php esc_html_e( 'Click a word or drag across several to highlight the key expressions, then translate. Check every Polish sentence before you publish.', 'translation-drill' ); ?></p>
+					</div>
+
+					<p class="tbtd-stage-wait" data-role="stage-wait" <?php echo $has_items ? 'hidden' : ''; ?>><?php esc_html_e( 'Your sentences appear here when you continue from Stage 2.', 'translation-drill' ); ?></p>
+
+					<div data-role="stage-body" <?php echo $has_items ? '' : 'hidden'; ?>>
+						<ol class="tbtd-items" data-role="items"></ol>
+
+						<div class="tbtd-translate-bar">
+							<button type="button" class="tbtd-btn tbtd-btn--primary" data-role="translate"><?php esc_html_e( 'Translate', 'translation-drill' ); ?></button>
+							<p class="tbtd-help" data-role="translate-status">
+								<?php
+								/* translators: %d: maximum sentences per translation */
+								echo esc_html( sprintf( __( 'Up to %d sentences go to the AI at a time; longer drills are sent in parts.', 'translation-drill' ), $max ) );
+								?>
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="tbtd-stage" data-stage="4">
+				<div class="tbtd-stage-card">
+					<div class="tbtd-stage-head">
+						<h2 class="tbtd-stage-title"><b>4</b> <?php esc_html_e( 'Approve and share', 'translation-drill' ); ?></h2>
 						<p class="tbtd-stage-sub" data-role="state-line"></p>
 					</div>
 
@@ -750,7 +882,7 @@ class TBTD_Teacher {
 				</div>
 			</section>
 			<?php
-			// Starting the next drill ends the whole flow rather than Stage 3, so the
+			// Starting the next drill ends the whole flow rather than Stage 4, so the
 			// button sits centred under the stage instead of inside its card. It follows
 			// the share panel's visibility.
 			?>
