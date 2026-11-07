@@ -1,15 +1,24 @@
 /**
  * TBT Translation Drill — student page.
  *
- * One Polish sentence at a time. Highlighted Polish expressions carry the
- * colour of their English partner; Hint lists them with the English gapped
- * (first letters only) and a tap reveals each one; Show answer gives the
- * full English with the same colours and the teacher's note.
+ * One Polish sentence at a time, in three steps that follow how students
+ * actually work: they say the sentence out loud, use the phrases, then check.
+ *   1. Polish sentence — highlighted expressions carry the colour of their
+ *      English partner.
+ *   2. Translate phrases — always open: each Polish expression with its
+ *      English gapped (first letters only). Hidden when there are no marks,
+ *      and the model answer becomes step 2.
+ *   3. Model answer — the full English in the same colours, the teacher's
+ *      note and, when TBT Flashcards is set up, Listen.
+ *
+ * Listen borrows Flashcards' ElevenLabs proxy (admin-ajax, same request as
+ * Flashcards makes). Each sentence is fetched once per page load and kept as
+ * a blob URL; on any failure the browser's own speech takes over, so the
+ * button never does nothing.
  *
  * Nothing is scored. When TBT Notes is present, one completion per page load
  * is reported to its Class Progress panel, with a heartbeat while the student
- * works. Typed attempts still live in memory only, and the last sentence
- * reached is remembered per drill in this browser.
+ * works. The last sentence reached is remembered per drill in this browser.
  */
 ( function () {
 	'use strict';
@@ -111,6 +120,72 @@
 		} );
 	}
 
+	/* ---------- Audio ---------- */
+
+	var ICONS = {
+		idle: '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
+		playing: '<svg aria-hidden="true" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>',
+		loading: '<svg aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="26 12" stroke-linecap="round"/></svg>'
+	};
+
+	// Text → blob URL, for the page load. One shared Audio element.
+	var audioUrls = new Map();
+	var audioEl = null;
+
+	function fetchAudio( text ) {
+		var body = new URLSearchParams();
+		body.append( 'action', cfg.ttsAction );
+		body.append( 'nonce', cfg.ttsNonce );
+		body.append( 'text', text );
+		return fetch( cfg.ttsUrl, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: body.toString()
+		} ).then( function ( res ) {
+			var type = res.headers.get( 'Content-Type' ) || '';
+			if ( ! res.ok || type.indexOf( 'audio/' ) !== 0 ) {
+				throw new Error( 'TTS proxy returned ' + res.status + ' ' + type );
+			}
+			return res.blob();
+		} ).then( function ( blob ) {
+			var url = URL.createObjectURL( blob );
+			audioUrls.set( text, url );
+			return url;
+		} );
+	}
+
+	/** Web Speech fallback, as in TBT Flashcards. Returns false when unavailable. */
+	function speak( text, done ) {
+		if ( typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined' ) {
+			return false;
+		}
+		try {
+			var u = new SpeechSynthesisUtterance( text );
+			u.lang = 'en-GB';
+			u.rate = 0.9;
+			var voices = speechSynthesis.getVoices();
+			var voice = null;
+			for ( var a = 0; a < voices.length && ! voice; a++ ) {
+				if ( voices[ a ].lang === 'en-GB' ) { voice = voices[ a ]; }
+			}
+			for ( var b = 0; b < voices.length && ! voice; b++ ) {
+				if ( voices[ b ].lang.indexOf( 'en' ) === 0 ) { voice = voices[ b ]; }
+			}
+			if ( voice ) {
+				u.voice = voice;
+			}
+			u.onend = done;
+			u.onerror = done;
+			speechSynthesis.cancel();
+			speechSynthesis.speak( u );
+			return true;
+		} catch ( err ) {
+			console.warn( 'TBT Translation Drill speech fallback:', err );
+			return false;
+		}
+	}
+
 	function start( root ) {
 		var data;
 		try {
@@ -126,9 +201,12 @@
 		var items = data.items;
 		var storeKey = 'tbtd-pos-' + data.slug;
 		var state = items.map( function () {
-			return { hint: false, open: {}, answer: false, draft: '' };
+			return { answer: false };
 		} );
 		var i = 0;
+		var listenBtn = $( 'listen' );
+		var hasAudio = !! ( cfg.ttsUrl && cfg.ttsAction && cfg.ttsNonce && window.fetch && window.URL && URL.createObjectURL );
+		var listenSeq = 0;
 
 		activity = data.activity || null;
 		// startedAt is set on the first student action, not on page load, so a
@@ -186,15 +264,6 @@
 			el.classList.add( 'is-in' );
 		}
 
-		function renderYours() {
-			var d = state[ i ].draft.trim();
-			var yours = $( 'yours' );
-			yours.hidden = ! d;
-			if ( d ) {
-				yours.innerHTML = esc( t.yours ) + ' <span>' + esc( d ) + '</span>';
-			}
-		}
-
 		function render( animate ) {
 			var item = items[ i ];
 			var st = state[ i ];
@@ -206,41 +275,35 @@
 			} );
 
 			$( 'pl' ).innerHTML = marked( item.pl );
-			$( 'attempt' ).value = st.draft;
 
-			// Hints: every English highlight, in colour order, with its Polish
-			// partner where there is one.
+			// Phrases: every English highlight, in colour order, with its Polish
+			// partner where there is one. Read-only: the English stays gapped.
 			var pl = chunks( item.pl );
 			var en = chunks( item.en );
-			$( 'hints' ).innerHTML = Object.keys( en ).sort().map( function ( n ) {
-				var open = !! st.open[ n ];
-				var enHtml = open
-					? esc( en[ n ] )
-					: '<span class="tbtd-p-gap">' + esc( gap( en[ n ] ) ) + '</span><span class="tbtd-p-tap">' + esc( t.tapReveal ) + '</span>';
-				return '<li><button type="button" class="tbtd-p-hint' + ( open ? ' is-open' : '' ) + '" data-n="' + n + '" aria-expanded="' + open + '">'
-					+ '<span class="tbtd-p-hint-pl"><span class="tbtd-p-dot tbtd-p-dot' + n + '"></span>' + ( pl[ n ] ? esc( pl[ n ] ) : '' ) + '</span>'
-					+ '<span class="tbtd-p-hint-arrow" aria-hidden="true">→</span>'
-					+ '<span class="tbtd-p-hint-en tbtd-p-en' + n + '">' + enHtml + '</span>'
-					+ '</button></li>';
+			var keys = Object.keys( en ).sort();
+			$( 'phrases' ).innerHTML = keys.map( function ( n ) {
+				var phrase = en[ n ];
+				var label = fmt( t.startsWith, phrase.charAt( 0 ), phrase.replace( /\s+/g, '' ).length );
+				return '<li class="tbtd-p-phrase">'
+					+ '<span class="tbtd-p-phrase-pl" lang="pl"><span class="tbtd-p-dot tbtd-p-dot' + n + '"></span>' + ( pl[ n ] ? esc( pl[ n ] ) : '' ) + '</span>'
+					+ '<span class="tbtd-p-arrow" aria-hidden="true">→</span>'
+					+ '<span class="tbtd-p-phrase-en tbtd-p-en' + n + '" lang="en" aria-label="' + esc( label ) + '">' + esc( gap( phrase ) ) + '</span>'
+					+ '</li>';
 			} ).join( '' );
-			var hasHints = Object.keys( en ).length > 0;
-			$( 'hint-btn' ).hidden = ! hasHints;
-			$( 'hint-panel' ).hidden = ! ( st.hint && hasHints );
-			$( 'hint-btn' ).setAttribute( 'aria-pressed', st.hint ? 'true' : 'false' );
+			$( 'step-phrases' ).hidden = ! keys.length;
+			$( 'answer-num' ).textContent = keys.length ? '3' : '2';
 
 			$( 'en' ).innerHTML = marked( item.en );
 			var note = $( 'note' );
 			note.innerHTML = item.note || '';
 			note.hidden = ! item.note;
-			renderYours();
+			$( 'step-answer' ).classList.toggle( 'tbtd-p-step--waiting', ! st.answer );
+			$( 'answer-btn' ).hidden = st.answer;
 			$( 'answer-panel' ).hidden = ! st.answer;
-			$( 'answer-btn' ).firstChild.nodeValue = ( st.answer ? t.hideAnswer : t.showAnswer ) + ' ';
+			listenBtn.hidden = ! hasAudio;
 
 			if ( animate === 'answer' && st.answer ) {
 				restart( $( 'answer-panel' ) );
-			}
-			if ( animate === 'hint' && st.hint ) {
-				restart( $( 'hint-panel' ) );
 			}
 			if ( animate === 'card' ) {
 				restart( $( 'card' ) );
@@ -258,6 +321,7 @@
 			if ( i === items.length - 1 && k === items.length ) {
 				reportCompletion();
 			}
+			stopAudio();
 			i = k % items.length;
 			try {
 				window.localStorage.setItem( storeKey, String( i ) );
@@ -265,35 +329,105 @@
 			render( 'card' );
 		}
 
-		function toggleHint() {
-			state[ i ].hint = ! state[ i ].hint;
-			render( 'hint' );
-		}
-
 		function toggleAnswer() {
+			var focusInside = $( 'answer-panel' ).contains( document.activeElement );
 			state[ i ].answer = ! state[ i ].answer;
+			if ( ! state[ i ].answer ) {
+				stopAudio();
+			}
 			render( 'answer' );
+			if ( state[ i ].answer ) {
+				( listenBtn.hidden ? $( 'hide-btn' ) : listenBtn ).focus( { preventScroll: true } );
+			} else if ( focusInside ) {
+				// The focused control just disappeared; keep keyboard users in place.
+				$( 'answer-btn' ).focus( { preventScroll: true } );
+			}
 		}
 
-		$( 'hint-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleHint(); } );
-		$( 'answer-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleAnswer(); } );
-		$( 'prev' ).addEventListener( 'click', function () { noteInteraction(); go( i - 1 ); } );
-		$( 'next' ).addEventListener( 'click', function () { noteInteraction(); go( i + 1 ); } );
-		$( 'attempt' ).addEventListener( 'input', function ( e ) {
-			noteInteraction();
-			state[ i ].draft = e.target.value;
-			renderYours();
-		} );
-		$( 'hints' ).addEventListener( 'click', function ( e ) {
-			var b = e.target.closest( '.tbtd-p-hint' );
-			if ( ! b ) {
+		/* Listen. listenSeq invalidates a pending fetch or play when the student
+		   stops, hides the answer or moves on. */
+		function setListen( stateName ) {
+			listenBtn.setAttribute( 'data-state', stateName );
+			var text = { idle: t.listen, loading: t.loading, playing: t.stop }[ stateName ];
+			listenBtn.innerHTML = ICONS[ stateName ] + '<span>' + esc( text ) + '</span> <kbd>P</kbd>';
+			if ( stateName === 'idle' ) {
+				listenBtn.setAttribute( 'aria-label', t.listenLabel );
+			} else {
+				listenBtn.removeAttribute( 'aria-label' );
+			}
+		}
+
+		function stopAudio() {
+			listenSeq++;
+			if ( audioEl ) {
+				audioEl.pause();
+			}
+			if ( typeof speechSynthesis !== 'undefined' ) {
+				speechSynthesis.cancel();
+			}
+			if ( hasAudio ) {
+				setListen( 'idle' );
+			}
+		}
+
+		function fallback( text, seq, err ) {
+			console.warn( 'TBT Translation Drill audio:', err );
+			if ( seq !== listenSeq ) {
+				return;
+			}
+			var spoke = speak( text, function () {
+				if ( seq === listenSeq ) {
+					setListen( 'idle' );
+				}
+			} );
+			setListen( spoke ? 'playing' : 'idle' );
+		}
+
+		function playUrl( url, text, seq ) {
+			if ( ! audioEl ) {
+				audioEl = new Audio();
+			}
+			audioEl.onended = function () {
+				if ( seq === listenSeq ) {
+					setListen( 'idle' );
+				}
+			};
+			audioEl.src = url;
+			setListen( 'playing' );
+			var p = audioEl.play();
+			if ( p && p.catch ) {
+				p.catch( function ( err ) { fallback( text, seq, err ); } );
+			}
+		}
+
+		function toggleListen() {
+			if ( ! hasAudio || ! state[ i ].answer ) {
 				return;
 			}
 			noteInteraction();
-			var n = b.getAttribute( 'data-n' );
-			state[ i ].open[ n ] = ! state[ i ].open[ n ];
-			render();
-		} );
+			if ( listenBtn.getAttribute( 'data-state' ) !== 'idle' ) {
+				stopAudio();
+				return;
+			}
+			var text = items[ i ].en.replace( MARK, '$1' ).trim();
+			var seq = ++listenSeq;
+			if ( audioUrls.has( text ) ) {
+				playUrl( audioUrls.get( text ), text, seq );
+				return;
+			}
+			setListen( 'loading' );
+			fetchAudio( text ).then( function ( url ) {
+				if ( seq === listenSeq ) {
+					playUrl( url, text, seq );
+				}
+			} ).catch( function ( err ) { fallback( text, seq, err ); } );
+		}
+
+		$( 'answer-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleAnswer(); } );
+		$( 'hide-btn' ).addEventListener( 'click', function () { noteInteraction(); toggleAnswer(); } );
+		listenBtn.addEventListener( 'click', toggleListen );
+		$( 'prev' ).addEventListener( 'click', function () { noteInteraction(); go( i - 1 ); } );
+		$( 'next' ).addEventListener( 'click', function () { noteInteraction(); go( i + 1 ); } );
 
 		document.addEventListener( 'keydown', function ( e ) {
 			var tag = e.target && e.target.tagName;
@@ -309,15 +443,17 @@
 				e.preventDefault();
 				noteInteraction();
 				go( i - 1 );
-			} else if ( k === 'h' ) {
-				noteInteraction();
-				toggleHint();
 			} else if ( k === 'a' ) {
 				noteInteraction();
 				toggleAnswer();
+			} else if ( k === 'p' ) {
+				toggleListen();
 			}
 		} );
 
+		if ( hasAudio ) {
+			setListen( 'idle' );
+		}
 		render();
 	}
 

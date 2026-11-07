@@ -76,21 +76,49 @@ class TBTD_Player {
 		wp_localize_script(
 			'tbtd-player',
 			'tbtdPlayer',
-			$activity + array(
+			$activity + self::audio() + array(
 				'i18n' => array(
 					/* translators: 1: current sentence, 2: total */
-					'count'      => __( 'Sentence %1$d of %2$d', 'translation-drill' ),
+					'count'       => __( 'Sentence %1$d of %2$d', 'translation-drill' ),
 					/* translators: %d: sentence number */
-					'goTo'       => __( 'Sentence %d', 'translation-drill' ),
-					'showAnswer' => __( 'Show answer', 'translation-drill' ),
-					'hideAnswer' => __( 'Hide answer', 'translation-drill' ),
-					'tapReveal'  => __( 'Tap to see the full expression', 'translation-drill' ),
-					'yours'      => __( 'Your version:', 'translation-drill' ),
-					'next'       => __( 'Next →', 'translation-drill' ),
-					'restart'    => __( 'Back to 1 ↺', 'translation-drill' ),
+					'goTo'        => __( 'Sentence %d', 'translation-drill' ),
+					'showAnswer'  => __( 'Show model answer', 'translation-drill' ),
+					'hideAnswer'  => __( 'Hide model answer', 'translation-drill' ),
+					/* translators: spoken label for a gapped phrase. 1: its first letter, 2: number of letters */
+					'startsWith'  => __( 'Starts with %1$s, %2$d letters', 'translation-drill' ),
+					'listen'      => __( 'Listen', 'translation-drill' ),
+					'stop'        => __( 'Stop', 'translation-drill' ),
+					'loading'     => __( 'Loading', 'translation-drill' ),
+					'listenLabel' => __( 'Listen to the model answer', 'translation-drill' ),
+					'next'        => __( 'Next →', 'translation-drill' ),
+					'restart'     => __( 'Back to 1 ↺', 'translation-drill' ),
 				),
 			)
 		);
+	}
+
+	/**
+	 * Audio for the model answer, when TBT Flashcards is active and has an
+	 * ElevenLabs key. The drill borrows Flashcards' proxy so both share one
+	 * key, one voice and one MP3 cache. The key is read only to test that it
+	 * is set; it never reaches the page.
+	 *
+	 * @return array Empty when audio is off.
+	 */
+	private static function audio() {
+		static $audio = null;
+		if ( null !== $audio ) {
+			return $audio;
+		}
+		$audio = array();
+		if ( function_exists( 'tbt_fc_tts_proxy' ) && '' !== (string) get_option( 'tbt_fc_elevenlabs_api_key', '' ) ) {
+			$audio = array(
+				'ttsUrl'    => admin_url( 'admin-ajax.php' ),
+				'ttsAction' => 'tbt_fc_tts',
+				'ttsNonce'  => wp_create_nonce( 'tbt_fc_tts_nonce' ),
+			);
+		}
+		return $audio;
 	}
 
 	/**
@@ -211,32 +239,33 @@ class TBTD_Player {
 			<nav class="tbtd-p-track" data-role="track" aria-label="<?php esc_attr_e( 'Sentences', 'translation-drill' ); ?>"></nav>
 
 			<div class="tbtd-p-card" data-role="card">
-				<section>
-					<p class="tbtd-p-lang"><?php esc_html_e( 'Polish', 'translation-drill' ); ?></p>
+				<section class="tbtd-p-step" aria-labelledby="tbtd-s1">
+					<p class="tbtd-p-step-head" id="tbtd-s1">
+						<span class="tbtd-p-step-num">1</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Polish sentence', 'translation-drill' ); ?></span>
+					</p>
 					<p class="tbtd-p-sentence" lang="pl" data-role="pl"></p>
 				</section>
 
-				<label class="tbtd-p-field" for="tbtd-attempt">
-					<span><?php esc_html_e( 'Your translation', 'translation-drill' ); ?></span>
-					<textarea id="tbtd-attempt" data-role="attempt" rows="2" lang="en"
-						placeholder="<?php esc_attr_e( 'Write your English version here, or say it out loud…', 'translation-drill' ); ?>"></textarea>
-				</label>
-
-				<div class="tbtd-p-actions">
-					<button type="button" class="tbtd-p-btn" data-role="hint-btn" aria-pressed="false"><?php esc_html_e( 'Hint', 'translation-drill' ); ?> <kbd>H</kbd></button>
-					<button type="button" class="tbtd-p-btn tbtd-p-btn--primary" data-role="answer-btn"><?php esc_html_e( 'Show answer', 'translation-drill' ); ?> <kbd>A</kbd></button>
-				</div>
-
-				<section class="tbtd-p-panel" data-role="hint-panel" hidden>
-					<p class="tbtd-p-panel-title"><?php esc_html_e( 'Key expressions · tap to reveal', 'translation-drill' ); ?></p>
-					<ul class="tbtd-p-hints" data-role="hints"></ul>
+				<section class="tbtd-p-step" data-role="step-phrases" aria-labelledby="tbtd-s2">
+					<p class="tbtd-p-step-head" id="tbtd-s2">
+						<span class="tbtd-p-step-num">2</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Translate phrases', 'translation-drill' ); ?></span>
+					</p>
+					<ul class="tbtd-p-phrases" data-role="phrases"></ul>
 				</section>
 
-				<section class="tbtd-p-panel tbtd-p-answer" data-role="answer-panel" hidden>
-					<p class="tbtd-p-lang"><?php esc_html_e( 'English', 'translation-drill' ); ?></p>
-					<p class="tbtd-p-sentence" lang="en" data-role="en"></p>
-					<p class="tbtd-p-yours" data-role="yours" hidden></p>
-					<p class="tbtd-p-note" data-role="note" hidden></p>
+				<section class="tbtd-p-step" data-role="step-answer" aria-labelledby="tbtd-s3">
+					<p class="tbtd-p-step-head" id="tbtd-s3">
+						<span class="tbtd-p-step-num" data-role="answer-num">3</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Model answer', 'translation-drill' ); ?></span>
+					</p>
+					<button type="button" class="tbtd-p-btn tbtd-p-btn--primary" data-role="answer-btn"><?php esc_html_e( 'Show model answer', 'translation-drill' ); ?> <kbd>A</kbd></button>
+					<div class="tbtd-p-answer" data-role="answer-panel" hidden>
+						<p class="tbtd-p-sentence" lang="en" data-role="en"></p>
+						<div class="tbtd-p-answer-actions">
+							<button type="button" class="tbtd-p-btn tbtd-p-listen" data-role="listen" data-state="idle" hidden></button>
+							<button type="button" class="tbtd-p-btn" data-role="hide-btn"><?php esc_html_e( 'Hide model answer', 'translation-drill' ); ?></button>
+						</div>
+						<p class="tbtd-p-note" data-role="note" hidden></p>
+					</div>
 				</section>
 			</div>
 
@@ -244,8 +273,10 @@ class TBTD_Player {
 				<button type="button" class="tbtd-p-btn" data-role="prev"><?php esc_html_e( '← Previous', 'translation-drill' ); ?></button>
 				<p class="tbtd-p-keys" aria-hidden="true">
 					<span><kbd>←</kbd> <kbd>→</kbd> <?php esc_html_e( 'move', 'translation-drill' ); ?></span>
-					<span><kbd>H</kbd> <?php esc_html_e( 'hint', 'translation-drill' ); ?></span>
-					<span><kbd>A</kbd> <?php esc_html_e( 'answer', 'translation-drill' ); ?></span>
+					<span><kbd>A</kbd> <?php esc_html_e( 'model answer', 'translation-drill' ); ?></span>
+					<?php if ( ! empty( self::audio() ) ) : ?>
+						<span><kbd>P</kbd> <?php esc_html_e( 'listen', 'translation-drill' ); ?></span>
+					<?php endif; ?>
 				</p>
 				<button type="button" class="tbtd-p-btn" data-role="next"><?php esc_html_e( 'Next →', 'translation-drill' ); ?></button>
 			</div>

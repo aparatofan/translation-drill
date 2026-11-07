@@ -1,7 +1,7 @@
 /* TBT Translation Drill — student page. Requires tbt-tokens.css.
  *
- * Built to work two ways at once: on a student's phone with the typing box,
- * and screen-shared by the teacher, where the sentence must read from the
+ * Built to work two ways at once: on a student's phone, saying the sentence
+ * out loud, and screen-shared by the teacher, where the sentence must read from the
  * back of the room. So the sentences are large, the controls are few, and
  * the keyboard shortcuts are shown on wide screens only.
  */
@@ -60,7 +60,7 @@
 .tbtd-p-card {
   background-color: var(--tbt-surface); border: 1px solid var(--tbt-line); border-top: 5px solid var(--tbt-blue);
   border-radius: var(--tbt-r-xl); box-shadow: var(--tbt-shadow-md);
-  padding: clamp(20px, 4vw, 36px); display: flex; flex-direction: column; gap: var(--tbt-s5);
+  padding: clamp(20px, 4vw, 36px); display: flex; flex-direction: column; gap: 0;
 }
 .tbtd-p-card--message { align-items: flex-start; }
 .tbt .tbtd-p-message { font-size: 17px; color: var(--tbt-ink-soft); margin: 0 !important; max-width: 60ch; }
@@ -83,19 +83,22 @@
 .tbt mark.tbtd-hl3 { background-color: var(--tbtd-hl3-bg) !important; box-shadow: inset 0 -2px 0 var(--tbtd-hl3); }
 .tbt mark.tbtd-hl4 { background-color: var(--tbtd-hl4-bg) !important; box-shadow: inset 0 -2px 0 var(--tbtd-hl4); }
 
-.tbtd-p-field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--tbt-ink-soft); margin: 0; }
-.tbt .tbtd-p-field textarea {
-  display: block !important; width: 100% !important; min-height: 80px; resize: vertical; margin: 0 !important;
-  padding: 12px 14px !important; border-radius: var(--tbt-r-md) !important;
-  border: 1.5px solid var(--tbt-line) !important; background-color: var(--tbt-blue-tint) !important;
-  color: var(--tbt-ink) !important; font-family: var(--tbt-display) !important; font-size: 17px !important; font-weight: 400;
-  line-height: 1.5 !important; box-shadow: none;
+/* ---------- Steps ---------- */
+/* Three steps per sentence: Polish, phrases, model answer. The card's gap is
+   0; each step spaces itself from the one before. */
+.tbtd-p-step { display: flex; flex-direction: column; gap: var(--tbt-s3); min-width: 0; }
+.tbtd-p-step + .tbtd-p-step { border-top: 1.5px dashed var(--tbt-line); margin-top: var(--tbt-s5); padding-top: var(--tbt-s5); }
+.tbt .tbtd-p-step-head { display: flex; align-items: center; gap: 10px; margin: 0 !important; padding: 0 !important; }
+.tbtd-p-step-num {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 26px; height: 26px; border-radius: 8px;
+  background-color: var(--tbt-blue); color: #FFFFFF;
+  font: 700 13px/1 var(--tbt-display); font-variant-numeric: tabular-nums;
 }
-.tbt .tbtd-p-field textarea::placeholder { color: var(--tbt-ink-faint) !important; }
-.tbt .tbtd-p-field textarea:focus { outline: none; border-color: var(--tbt-blue) !important; background-color: var(--tbt-surface) !important; box-shadow: 0 0 0 4px var(--tbt-blue-wash); }
+.tbtd-p-step--waiting .tbtd-p-step-num { background-color: var(--tbt-blue-wash); color: var(--tbt-blue-deep); }
+.tbtd-p-step-label { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--tbt-ink-soft); }
 
 /* ---------- Buttons ---------- */
-.tbtd-p-actions { display: flex; flex-wrap: wrap; gap: var(--tbt-s3); }
 .tbt .tbtd-p-btn {
   display: inline-flex !important; align-items: center; justify-content: center; gap: 8px;
   width: auto !important; min-height: 0 !important; height: auto !important;
@@ -115,36 +118,36 @@
   font: 600 11px/1 var(--tbt-body); padding: 3px 5px; border-radius: 4px; border: 1px solid currentColor;
   opacity: .6; background: none; box-shadow: none; color: inherit;
 }
+.tbt .tbtd-p-btn svg { width: 16px; height: 16px; flex: none; }
+.tbt .tbtd-p-step > .tbtd-p-btn--primary { align-self: flex-start; }
+.tbt .tbtd-p-listen[data-state="playing"] { border-color: var(--tbt-blue) !important; background-color: var(--tbt-blue-wash) !important; }
+.tbt .tbtd-p-listen[data-state="loading"] svg { animation: tbtd-spin .8s linear infinite; }
+@keyframes tbtd-spin { to { transform: rotate(360deg); } }
 
-/* ---------- Panels ---------- */
-.tbtd-p-panel { border-top: 1.5px dashed var(--tbt-line); padding-top: var(--tbt-s5); display: flex; flex-direction: column; gap: var(--tbt-s3); }
-.tbt .tbtd-p-panel-title { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--tbt-ink-soft); margin: 0 !important; }
-.tbt .tbtd-p-hints { list-style: none !important; margin: 0 !important; padding: 0 !important; display: flex; flex-direction: column; gap: var(--tbt-s2); }
-.tbt .tbtd-p-hints li { margin: 0 !important; list-style: none !important; }
-.tbt .tbtd-p-hint {
-  display: grid !important; grid-template-columns: minmax(0,1fr) auto minmax(0,1.2fr); align-items: center; gap: var(--tbt-s3);
-  width: 100% !important; min-height: 0 !important; text-align: left; padding: 12px 16px !important;
-  border-radius: var(--tbt-r-md) !important; border: 1.5px solid var(--tbt-line) !important;
-  background-color: var(--tbt-blue-tint) !important; color: var(--tbt-ink) !important;
-  font-family: var(--tbt-display); font-size: 17px !important; font-weight: 400; line-height: 1.4 !important;
-  text-transform: none; letter-spacing: 0; cursor: pointer;
+/* ---------- Phrases ---------- */
+/* Read-only rows: no border, no hover, no pointer — they are not controls. */
+.tbt .tbtd-p-phrases { list-style: none !important; margin: 0 !important; padding: 0 !important; display: flex; flex-direction: column; gap: var(--tbt-s2); }
+.tbt .tbtd-p-phrase {
+  display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1.2fr); align-items: center; gap: var(--tbt-s3);
+  margin: 0 !important; list-style: none !important; padding: 12px 16px !important;
+  border: 0 !important; border-radius: var(--tbt-r-md); background-color: var(--tbt-blue-tint); color: var(--tbt-ink);
+  font-family: var(--tbt-display) !important; font-size: 18px !important; font-weight: 400; line-height: 1.4 !important; cursor: default;
 }
-.tbt .tbtd-p-hint:hover { border-color: var(--tbt-blue) !important; }
-.tbtd-p-hint-pl, .tbtd-p-hint-en { min-width: 0; }
-.tbtd-p-hint-arrow { color: var(--tbt-ink-faint); }
+.tbtd-p-phrase-pl, .tbtd-p-phrase-en { min-width: 0; }
+.tbtd-p-phrase-en { font-weight: 600; letter-spacing: .08em; }
+.tbtd-p-arrow { color: var(--tbt-ink-faint); }
 .tbtd-p-gap { letter-spacing: .06em; color: var(--tbt-ink-soft); }
-.tbtd-p-tap { display: block; font: 500 12px/1.3 var(--tbt-body); color: var(--tbt-ink-faint); margin-top: 2px; }
-.tbtd-p-hint.is-open .tbtd-p-hint-en { font-weight: 700; }
 .tbtd-p-en1 { color: var(--tbtd-hl1); } .tbtd-p-en2 { color: var(--tbtd-hl2); }
 .tbtd-p-en3 { color: var(--tbtd-hl3); } .tbtd-p-en4 { color: var(--tbtd-hl4); }
 .tbtd-p-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; vertical-align: middle; }
 .tbtd-p-dot1 { background-color: var(--tbtd-hl1); } .tbtd-p-dot2 { background-color: var(--tbtd-hl2); }
 .tbtd-p-dot3 { background-color: var(--tbtd-hl3); } .tbtd-p-dot4 { background-color: var(--tbtd-hl4); }
 
-.tbt .tbtd-p-yours { font-size: 15px; color: var(--tbt-ink-soft); margin: 0 !important; }
-.tbt .tbtd-p-yours span { font-family: var(--tbt-display); color: var(--tbt-ink); }
+/* ---------- Model answer ---------- */
+.tbtd-p-answer { display: flex; flex-direction: column; gap: var(--tbt-s4); }
+.tbtd-p-answer-actions { display: flex; flex-wrap: wrap; gap: var(--tbt-s3); }
 .tbt .tbtd-p-note {
-  margin: 0 !important; padding: 12px 16px; border-radius: var(--tbt-r-md);
+  margin: 0 !important; padding: 12px 16px; border-radius: var(--tbt-r-md); max-width: 70ch;
   background-color: var(--tbt-blue-wash); font-size: 16px; line-height: 1.55; color: var(--tbt-ink);
 }
 .tbt .tbtd-p-note b { color: var(--tbt-blue-deep); }
@@ -158,15 +161,15 @@
 .tbt .tbtd-p-keys kbd { font: 600 11px/1 var(--tbt-body); padding: 3px 5px; border-radius: 4px; border: 1px solid currentColor; background: none; box-shadow: none; color: inherit; }
 
 @media (max-width: 600px) {
-  .tbt .tbtd-p-hint { grid-template-columns: 1fr; gap: 4px; }
-  .tbtd-p-hint-arrow { display: none; }
+  .tbt .tbtd-p-phrase { grid-template-columns: 1fr; gap: 4px; }
+  .tbtd-p-arrow { display: none; }
   .tbt .tbtd-p-keys { display: none; }
   .tbt .tbtd-p-btn kbd { display: none; }
-  .tbtd-p-actions .tbtd-p-btn { flex: 1 1 0; }
 }
 @media (hover: none) {
   .tbt .tbtd-p-keys, .tbt .tbtd-p-btn kbd { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .is-in { animation: none; }
+  .tbt .tbtd-p-listen[data-state="loading"] svg { animation: none; }
 }
