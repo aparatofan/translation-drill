@@ -19,7 +19,7 @@ Polish → English sentence translation drills for live lessons. Replaces the Wo
    - **Model answer** (`A`) shows the English with the same colours. The teacher's note is not shown to students. When TBT Flashcards is active with an ElevenLabs key, **Listen** (`P`) reads the English in the Flashcards voice, through Flashcards' own audio proxy and cache.
    - `←` `→` move between sentences.
 
-Nothing is scored or stored about students. The page remembers which sentence a student reached, in their browser only.
+On the last sentence, **CHECK YOUR SCORE** opens an end screen. Students earn 1 point each for revealing a phrase, opening the model answer and pressing Listen — first click only per sentence, and Listen only where audio is available. Each time a student reaches the end screen, one attempt (points, maximum and time) is sent to TBT Notes and appears in TBT Results. Owners and administrators see a preview and nothing is saved. The page remembers which sentence a student reached, in their browser only.
 
 ## Setup
 

@@ -17,9 +17,15 @@
  * a blob URL; on any failure the browser's own speech takes over, so the
  * button never does nothing.
  *
- * Nothing is scored. When TBT Notes is present, one completion per page load
- * is reported to its Class Progress panel, with a heartbeat while the student
- * works. The last sentence reached is remembered per drill in this browser.
+ * Points: 1 for each phrase revealed, 1 for opening the model answer and 1
+ * for Listen (only where audio is on), first click only per sentence. They
+ * live in page memory; a reload starts again at 0.
+ *
+ * CHECK YOUR SCORE on the last sentence (or →) opens the end screen. Each
+ * time it appears, one attempt (points, maximum, time) is posted to TBT Notes
+ * when Notes is present, with a visible save status and a retry. A heartbeat
+ * goes to Notes' Class Progress while the student works. The sentence reached
+ * is remembered per drill in this browser until the drill is finished.
  */
 ( function () {
 	'use strict';
@@ -35,13 +41,12 @@
 	var presenceTimer = null;
 	var activity = null;
 
-	function postActivity( path, body ) {
-		if ( ! cfg.activityBase || ! cfg.activityNonce || ! activity ) {
-			return;
-		}
+	function canReport() {
+		return !! ( cfg.activityBase && cfg.activityNonce && activity );
+	}
 
-		// A side effect of practising, never a gate on it: failures are swallowed.
-		fetch( cfg.activityBase + path, {
+	function sendActivity( path, body ) {
+		return fetch( cfg.activityBase + path, {
 			method: 'POST',
 			credentials: 'same-origin',
 			cache: 'no-store',
@@ -52,7 +57,15 @@
 			body: JSON.stringify( body || {} ),
 			// A student who closes the tab right after finishing is still recorded.
 			keepalive: true
-		} ).catch( function () {} );
+		} );
+	}
+
+	function postActivity( path, body ) {
+		if ( ! canReport() ) {
+			return;
+		}
+		// A side effect of practising, never a gate on it: failures are swallowed.
+		sendActivity( path, body ).catch( function () {} );
 	}
 
 	function startPresence() {
@@ -120,6 +133,16 @@
 			} );
 		} );
 	}
+
+	/* ---------- End screen icons ---------- */
+
+	var END_ICONS = {
+		star: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4 6.1 20.5l1.2-6.5L2.5 9.4l6.6-.9z"/></svg>',
+		saving: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+		saved: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+		failed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>',
+		preview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'
+	};
 
 	/* ---------- Audio ---------- */
 
@@ -211,9 +234,12 @@
 		var $ = function ( role ) { return root.querySelector( '[data-role="' + role + '"]' ); };
 		var items = data.items;
 		var storeKey = 'tbtd-pos-' + data.slug;
-		var state = items.map( function () {
-			return { answer: false, open: {} };
-		} );
+		// `earned` keys: 'p' + n per phrase, 'answer', 'audio'. Hiding the answer
+		// again keeps what was earned.
+		function freshState() {
+			return { answer: false, open: {}, earned: {} };
+		}
+		var state = items.map( freshState );
 		var i = 0;
 		var listenBtn = $( 'listen' );
 		var hasAudio = !! ( cfg.ttsUrl && cfg.ttsAction && cfg.ttsNonce && window.fetch && window.URL && URL.createObjectURL );
@@ -221,13 +247,13 @@
 
 		activity = data.activity || null;
 		// startedAt is set on the first student action, not on page load, so a
-		// student who only opens the link is not shown as working. completionSent
-		// holds for the page load: going round again does not report twice.
+		// student who only opens the link is not shown as working. `finished`
+		// is true while the end screen shows.
 		var startedAt = null;
-		var completionSent = false;
+		var finished = false;
 
 		function noteInteraction() {
-			if ( completionSent ) {
+			if ( finished ) {
 				return;
 			}
 			if ( ! startedAt ) {
@@ -236,18 +262,60 @@
 			startPresence();
 		}
 
-		function reportCompletion() {
-			if ( completionSent || ! activity ) {
+		/* ---------- Points ---------- */
+
+		function maxFor( k ) {
+			return Object.keys( chunks( items[ k ].en ) ).length + 1 + ( hasAudio ? 1 : 0 );
+		}
+
+		function pointsFor( k ) {
+			return Object.keys( state[ k ].earned ).length;
+		}
+
+		function totals() {
+			var got = 0;
+			var max = 0;
+			for ( var k = 0; k < items.length; k++ ) {
+				got += pointsFor( k );
+				max += maxFor( k );
+			}
+			return { got: got, max: max };
+		}
+
+		function showPoints( pop ) {
+			var el = $( 'points' );
+			el.innerHTML = END_ICONS.star + '<span>' + esc( fmt( t.points, totals().got ) ) + '</span>';
+			if ( pop ) {
+				el.classList.remove( 'is-pop' );
+				void el.offsetWidth;
+				el.classList.add( 'is-pop' );
+				var plus = document.createElement( 'span' );
+				plus.className = 'tbtd-p-plus';
+				plus.setAttribute( 'aria-hidden', 'true' );
+				plus.textContent = '+1';
+				el.appendChild( plus );
+				window.setTimeout( function () {
+					if ( plus.parentNode ) {
+						plus.parentNode.removeChild( plus );
+					}
+				}, 850 );
+			}
+		}
+
+		// A sentence's number turns light blue once all its points are in.
+		function markTrack() {
+			Array.prototype.forEach.call( track.children, function ( b, k ) {
+				b.classList.toggle( 'is-done', pointsFor( k ) === maxFor( k ) && k !== i );
+			} );
+		}
+
+		function earn( key ) {
+			if ( finished || state[ i ].earned[ key ] ) {
 				return;
 			}
-			completionSent = true;
-			stopPresence();
-			postActivity( '', {
-				tool: 'drill',
-				object_ref: activity.objectRef,
-				object_title: activity.objectTitle,
-				duration_seconds: startedAt ? Math.max( 0, Math.round( ( Date.now() - startedAt ) / 1000 ) ) : null
-			} );
+			state[ i ].earned[ key ] = true;
+			showPoints( true );
+			markTrack();
 		}
 
 		try {
@@ -282,8 +350,8 @@
 			$( 'count' ).textContent = fmt( t.count, i + 1, items.length );
 			Array.prototype.forEach.call( track.children, function ( b, k ) {
 				b.setAttribute( 'aria-current', k === i ? 'true' : 'false' );
-				b.classList.toggle( 'is-done', state[ k ].answer && k !== i );
 			} );
+			markTrack();
 
 			$( 'pl' ).innerHTML = marked( item.pl );
 
@@ -317,7 +385,10 @@
 			}
 
 			$( 'prev' ).disabled = i === 0;
-			$( 'next' ).textContent = i === items.length - 1 ? t.restart : t.next;
+			var last = i === items.length - 1;
+			var next = $( 'next' );
+			next.textContent = last ? t.finish : t.next;
+			next.classList.toggle( 'tbtd-p-btn--primary', last );
 		}
 
 		function go( k ) {
@@ -325,11 +396,12 @@
 				return;
 			}
 			// Next (or →) on the last sentence finishes the drill.
-			if ( i === items.length - 1 && k === items.length ) {
-				reportCompletion();
+			if ( k >= items.length ) {
+				finish();
+				return;
 			}
 			stopAudio();
-			i = k % items.length;
+			i = k;
 			try {
 				window.localStorage.setItem( storeKey, String( i ) );
 			} catch ( e ) {}
@@ -339,7 +411,9 @@
 		function toggleAnswer() {
 			var focusInside = $( 'answer-panel' ).contains( document.activeElement );
 			state[ i ].answer = ! state[ i ].answer;
-			if ( ! state[ i ].answer ) {
+			if ( state[ i ].answer ) {
+				earn( 'answer' );
+			} else {
 				stopAudio();
 			}
 			render( 'answer' );
@@ -412,6 +486,8 @@
 				return;
 			}
 			noteInteraction();
+			// Counts even when ElevenLabs fails and the browser voice plays.
+			earn( 'audio' );
 			if ( listenBtn.getAttribute( 'data-state' ) !== 'idle' ) {
 				stopAudio();
 				return;
@@ -440,6 +516,9 @@
 			var n = b.getAttribute( 'data-n' );
 			var open = ! state[ i ].open[ n ];
 			state[ i ].open[ n ] = open;
+			if ( open ) {
+				earn( 'p' + n );
+			}
 			b.classList.toggle( 'is-open', open );
 			b.setAttribute( 'aria-expanded', open ? 'true' : 'false' );
 			b.querySelector( '.tbtd-p-phrase-en' ).innerHTML = phraseEn( chunks( items[ i ].en )[ n ], open );
@@ -450,9 +529,135 @@
 		$( 'prev' ).addEventListener( 'click', function () { noteInteraction(); go( i - 1 ); } );
 		$( 'next' ).addEventListener( 'click', function () { noteInteraction(); go( i + 1 ); } );
 
+		/* ---------- End screen ---------- */
+
+		var endEl = $( 'end' );
+		var saveEl = $( 'save' );
+		var lastPayload = null;
+		var saveSeq = 0;
+
+		function showDrill( on ) {
+			[ 'track', 'card', 'nav' ].forEach( function ( role ) {
+				$( role ).hidden = ! on;
+			} );
+			endEl.hidden = on;
+		}
+
+		function finish() {
+			stopAudio();
+			stopPresence();
+			finished = true;
+
+			var sum = totals();
+			var all = sum.got === sum.max;
+			var secs = startedAt ? Math.max( 0, Math.round( ( Date.now() - startedAt ) / 1000 ) ) : 0;
+
+			$( 'count' ).textContent = t.finished;
+			$( 'end-badge' ).classList.toggle( 'is-partial', ! all );
+			$( 'end-title' ).textContent = all ? t.fullScore : t.complete;
+			$( 'end-sub' ).textContent = all ? t.fullScoreSub : t.partialSub;
+			$( 'end-score' ).innerHTML = sum.got + ' <small>/ ' + sum.max + '</small>';
+			$( 'end-time' ).textContent = Math.floor( secs / 60 ) + ':' + String( secs % 60 ).padStart( 2, '0' );
+
+			var missed = [];
+			for ( var k = 0; k < items.length; k++ ) {
+				if ( pointsFor( k ) < maxFor( k ) ) {
+					missed.push( k );
+				}
+			}
+			$( 'missed' ).hidden = ! missed.length;
+			$( 'missed-list' ).innerHTML = missed.map( function ( m ) {
+				return '<button type="button" data-k="' + m + '" aria-label="' + esc( fmt( t.goTo, m + 1 ) ) + '">' + ( m + 1 ) + '</button>';
+			} ).join( '' );
+
+			// A later visit starts at sentence 1.
+			try {
+				window.localStorage.setItem( storeKey, '0' );
+			} catch ( e ) {}
+
+			showDrill( false );
+			restart( endEl );
+			$( 'end-title' ).focus( { preventScroll: true } );
+
+			lastPayload = activity ? {
+				tool: 'drill',
+				object_ref: activity.objectRef,
+				object_title: activity.objectTitle,
+				duration_seconds: startedAt ? secs : null,
+				score: sum.got,
+				score_max: sum.max
+			} : null;
+			saveAttempt();
+		}
+
+		function setSave( name ) {
+			var text = { saving: t.saving, saved: t.saved, failed: t.saveFailed, preview: t.previewNote }[ name ];
+			saveEl.setAttribute( 'data-state', name );
+			saveEl.innerHTML = END_ICONS[ name ] + '<span>' + esc( text ) + '</span>'
+				+ ( name === 'failed' ? '<button type="button" class="tbtd-p-save-retry" data-role="retry">' + esc( t.retrySave ) + '</button>' : '' );
+			saveEl.hidden = false;
+		}
+
+		/* One attempt per end screen. A 429 from Notes means it already holds this
+		   drill for this student from the last 10 seconds, so it counts as saved. */
+		function saveAttempt() {
+			if ( canReport() && lastPayload ) {
+				var seq = ++saveSeq;
+				setSave( 'saving' );
+				sendActivity( '', lastPayload ).then( function ( res ) {
+					if ( seq === saveSeq ) {
+						setSave( res.ok || res.status === 429 ? 'saved' : 'failed' );
+					}
+				} ).catch( function () {
+					if ( seq === saveSeq ) {
+						setSave( 'failed' );
+					}
+				} );
+			} else if ( data.preview ) {
+				setSave( 'preview' );
+			} else {
+				saveEl.hidden = true;
+			}
+		}
+
+		saveEl.addEventListener( 'click', function ( e ) {
+			if ( e.target.closest( '[data-role="retry"]' ) ) {
+				saveAttempt();
+			}
+		} );
+
+		// Back to a sentence with points left: points and startedAt are kept.
+		$( 'missed-list' ).addEventListener( 'click', function ( e ) {
+			var b = e.target.closest( 'button' );
+			if ( ! b ) {
+				return;
+			}
+			finished = false;
+			showDrill( true );
+			go( parseInt( b.getAttribute( 'data-k' ), 10 ) );
+		} );
+
+		$( 'again' ).addEventListener( 'click', function () {
+			state = items.map( freshState );
+			startedAt = null;
+			finished = false;
+			showDrill( true );
+			showPoints( false );
+			go( 0 );
+		} );
+
+		var resultsLink = $( 'results' );
+		if ( cfg.resultsUrl ) {
+			resultsLink.href = cfg.resultsUrl;
+			resultsLink.hidden = false;
+		}
+
 		document.addEventListener( 'keydown', function ( e ) {
 			var tag = e.target && e.target.tagName;
 			if ( tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT' || e.target.isContentEditable || e.metaKey || e.ctrlKey || e.altKey ) {
+				return;
+			}
+			if ( ! endEl.hidden ) {
 				return;
 			}
 			var k = e.key.toLowerCase();
@@ -475,6 +680,7 @@
 		if ( hasAudio ) {
 			setListen( 'idle' );
 		}
+		showPoints( false );
 		render();
 	}
 
