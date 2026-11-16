@@ -77,25 +77,66 @@ class TBTD_Player {
 			'tbtd-player',
 			'tbtdPlayer',
 			$activity + self::audio() + array(
-				'i18n' => array(
+				'resultsUrl' => self::results_url(),
+				'i18n'       => array(
 					/* translators: 1: current sentence, 2: total */
-					'count'       => __( 'Sentence %1$d of %2$d', 'translation-drill' ),
+					'count'        => __( 'Sentence %1$d of %2$d', 'translation-drill' ),
 					/* translators: %d: sentence number */
-					'goTo'        => __( 'Sentence %d', 'translation-drill' ),
-					'showAnswer'  => __( 'Show model answer', 'translation-drill' ),
-					'hideAnswer'  => __( 'Hide model answer', 'translation-drill' ),
+					'goTo'         => __( 'Sentence %d', 'translation-drill' ),
+					'showAnswer'   => __( 'Show model answer', 'translation-drill' ),
+					'hideAnswer'   => __( 'Hide model answer', 'translation-drill' ),
 					/* translators: spoken label for a gapped phrase. 1: its first letter, 2: number of letters */
-					'startsWith'  => __( 'Starts with %1$s, %2$d letters', 'translation-drill' ),
-					'tapReveal'   => __( 'Tap to see the full expression', 'translation-drill' ),
-					'listen'      => __( 'Listen', 'translation-drill' ),
-					'stop'        => __( 'Stop', 'translation-drill' ),
-					'loading'     => __( 'Loading', 'translation-drill' ),
-					'listenLabel' => __( 'Listen to the model answer', 'translation-drill' ),
-					'next'        => __( 'Next →', 'translation-drill' ),
-					'restart'     => __( 'Back to 1 ↺', 'translation-drill' ),
+					'startsWith'   => __( 'Starts with %1$s, %2$d letters', 'translation-drill' ),
+					'tapReveal'    => __( 'Tap to see the full expression', 'translation-drill' ),
+					'listen'       => __( 'Listen', 'translation-drill' ),
+					'stop'         => __( 'Stop', 'translation-drill' ),
+					'loading'      => __( 'Loading', 'translation-drill' ),
+					'listenLabel'  => __( 'Listen to the model answer', 'translation-drill' ),
+					'next'         => __( 'Next →', 'translation-drill' ),
+					'finish'       => __( 'CHECK YOUR SCORE', 'translation-drill' ),
+					'finished'     => __( 'Drill finished', 'translation-drill' ),
+					/* translators: %d: number of points collected */
+					'points'       => __( '%d points', 'translation-drill' ),
+					'complete'     => __( 'Drill complete', 'translation-drill' ),
+					'fullScore'    => __( 'Full score!', 'translation-drill' ),
+					'fullScoreSub' => __( 'You collected every point in this drill.', 'translation-drill' ),
+					'partialSub'   => __( 'Reveal the phrases, open the model answer and listen to it — each one is a point.', 'translation-drill' ),
+					'saving'       => __( 'Saving to My results…', 'translation-drill' ),
+					'saved'        => __( 'Saved to My results', 'translation-drill' ),
+					'saveFailed'   => __( 'Not saved — check your connection.', 'translation-drill' ),
+					'retrySave'    => __( 'Try saving again', 'translation-drill' ),
+					'previewNote'  => __( 'Preview — your own drills are not saved to results.', 'translation-drill' ),
 				),
 			)
 		);
+	}
+
+	/**
+	 * The page holding TBT Results' [tbt_my_results], for the end screen's
+	 * "My results" link. Results has no helper for it, so the first published
+	 * page with the shortcode is used. Cached for 12 hours, empty included.
+	 *
+	 * @return string Permalink, or '' when Results is inactive or no page has it.
+	 */
+	private static function results_url() {
+		if ( ! shortcode_exists( 'tbt_my_results' ) ) {
+			return '';
+		}
+		$url = get_transient( 'tbtd_results_url' );
+		if ( false !== $url ) {
+			return (string) $url;
+		}
+
+		global $wpdb;
+		$page_id = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'page' AND post_status = 'publish' AND post_content LIKE %s ORDER BY ID ASC LIMIT 1",
+				'%' . $wpdb->esc_like( '[tbt_my_results' ) . '%'
+			)
+		);
+		$url = $page_id ? (string) get_permalink( $page_id ) : '';
+		set_transient( 'tbtd_results_url', $url, 12 * HOUR_IN_SECONDS );
+		return $url;
 	}
 
 	/**
@@ -217,6 +258,11 @@ class TBTD_Player {
 			);
 		}
 
+		// The end screen says nothing is saved instead of showing a save status.
+		if ( $is_owner || $is_draft ) {
+			$data['preview'] = true;
+		}
+
 		ob_start();
 		?>
 		<div class="tbt tbtd-player" data-role="player">
@@ -235,7 +281,10 @@ class TBTD_Player {
 					<p class="tbtd-p-eyebrow"><?php esc_html_e( 'Translation practice · Polish → English', 'translation-drill' ); ?></p>
 					<h2 class="tbtd-p-title"><?php echo esc_html( $drill->title ); ?></h2>
 				</div>
-				<p class="tbtd-p-count" data-role="count"></p>
+				<div class="tbtd-p-head-meta">
+					<p class="tbtd-p-count" data-role="count"></p>
+					<p class="tbtd-p-points" data-role="points" aria-live="polite"></p>
+				</div>
 			</header>
 
 			<nav class="tbtd-p-track" data-role="track" aria-label="<?php esc_attr_e( 'Sentences', 'translation-drill' ); ?>"></nav>
@@ -270,7 +319,7 @@ class TBTD_Player {
 				</section>
 			</div>
 
-			<div class="tbtd-p-nav">
+			<div class="tbtd-p-nav" data-role="nav">
 				<button type="button" class="tbtd-p-btn" data-role="prev"><?php esc_html_e( '← Previous', 'translation-drill' ); ?></button>
 				<p class="tbtd-p-keys" aria-hidden="true">
 					<span><kbd>←</kbd> <kbd>→</kbd> <?php esc_html_e( 'move', 'translation-drill' ); ?></span>
@@ -281,6 +330,37 @@ class TBTD_Player {
 				</p>
 				<button type="button" class="tbtd-p-btn" data-role="next"><?php esc_html_e( 'Next →', 'translation-drill' ); ?></button>
 			</div>
+
+			<section class="tbtd-p-card tbtd-p-end" data-role="end" hidden aria-live="polite">
+				<div class="tbtd-p-end-badge" data-role="end-badge">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+				</div>
+				<h3 class="tbtd-p-end-title" data-role="end-title" tabindex="-1"></h3>
+				<p class="tbtd-p-end-sub" data-role="end-sub"></p>
+
+				<div class="tbtd-p-stats">
+					<div class="tbtd-p-stat">
+						<p class="tbtd-p-stat-num" data-role="end-score"></p>
+						<p class="tbtd-p-stat-label"><?php esc_html_e( 'Points', 'translation-drill' ); ?></p>
+					</div>
+					<div class="tbtd-p-stat">
+						<p class="tbtd-p-stat-num" data-role="end-time"></p>
+						<p class="tbtd-p-stat-label"><?php esc_html_e( 'Time', 'translation-drill' ); ?></p>
+					</div>
+				</div>
+
+				<div class="tbtd-p-missed" data-role="missed" hidden>
+					<p class="tbtd-p-missed-label"><?php esc_html_e( 'Points still to collect — go back to sentence:', 'translation-drill' ); ?></p>
+					<div class="tbtd-p-missed-list" data-role="missed-list"></div>
+				</div>
+
+				<p class="tbtd-p-save" data-role="save" hidden></p>
+
+				<div class="tbtd-p-end-actions">
+					<button type="button" class="tbtd-p-btn tbtd-p-btn--primary" data-role="again"><?php esc_html_e( 'Try again ↺', 'translation-drill' ); ?></button>
+					<a class="tbtd-p-btn" href="#" data-role="results" hidden><?php esc_html_e( 'My results', 'translation-drill' ); ?></a>
+				</div>
+			</section>
 
 			<script type="application/json" data-role="drill-data"><?php echo wp_json_encode( $data, JSON_HEX_TAG | JSON_HEX_AMP ); ?></script>
 		</div>
