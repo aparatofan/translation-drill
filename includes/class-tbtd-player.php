@@ -275,6 +275,7 @@ class TBTD_Player {
 					<p class="tbtd-p-step-head" id="tbtd-s5">
 						<span class="tbtd-p-step-num">5</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Model answer', 'translation-drill' ); ?></span>
 					</p>
+					<p class="tbtd-p-instruction"><?php esc_html_e( 'Check out the model answer. Copy the sentence to your notebook.', 'translation-drill' ); ?></p>
 					<button type="button" class="tbtd-p-btn tbtd-p-btn--primary" data-role="answer-btn"><?php esc_html_e( 'Reveal the model answer', 'translation-drill' ); ?> <kbd>A</kbd></button>
 					<div class="tbtd-p-answer" data-role="answer-panel" hidden>
 						<p class="tbtd-p-sentence" lang="en" data-role="en"></p>
