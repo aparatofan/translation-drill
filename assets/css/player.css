@@ -84,8 +84,9 @@
 .tbt mark.tbtd-hl4 { background-color: var(--tbtd-hl4-bg) !important; box-shadow: inset 0 -2px 0 var(--tbtd-hl4); }
 
 /* ---------- Steps ---------- */
-/* Three steps per sentence: Polish, phrases, model answer. The card's gap is
-   0; each step spaces itself from the one before. */
+/* Up to five steps per sentence: Polish, phrases, your version, listen,
+   model answer. The card's gap is 0; each step spaces itself from the one
+   before. */
 .tbtd-p-step { display: flex; flex-direction: column; gap: var(--tbt-s3); min-width: 0; }
 .tbtd-p-step + .tbtd-p-step { border-top: 1.5px dashed var(--tbt-line); margin-top: var(--tbt-s5); padding-top: var(--tbt-s5); }
 .tbt .tbtd-p-step-head { display: flex; align-items: center; gap: 10px; margin: 0 !important; padding: 0 !important; }
@@ -97,6 +98,7 @@
 }
 .tbtd-p-step--waiting .tbtd-p-step-num { background-color: var(--tbt-blue-wash); color: var(--tbt-blue-deep); }
 .tbtd-p-step-label { font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--tbt-ink-soft); }
+.tbt .tbtd-p-instruction { font-size: 17px; line-height: 1.5 !important; color: var(--tbt-ink); margin: 0 !important; padding: 0 !important; max-width: 60ch; }
 
 /* ---------- Buttons ---------- */
 .tbt .tbtd-p-btn {
@@ -120,7 +122,7 @@
 }
 .tbt .tbtd-p-btn svg { width: 16px; height: 16px; flex: none; }
 .tbt .tbtd-p-step > .tbtd-p-btn--primary { align-self: flex-start; }
-.tbt .tbtd-p-listen[data-state="playing"] { border-color: var(--tbt-blue) !important; background-color: var(--tbt-blue-wash) !important; }
+.tbt .tbtd-p-listen[data-state="playing"] { border-color: var(--tbt-blue) !important; background-color: var(--tbt-blue-wash) !important; color: var(--tbt-blue-deep) !important; box-shadow: none; }
 .tbt .tbtd-p-listen[data-state="loading"] svg { animation: tbtd-spin .8s linear infinite; }
 @keyframes tbtd-spin { to { transform: rotate(360deg); } }
 

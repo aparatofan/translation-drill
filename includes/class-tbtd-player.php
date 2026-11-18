@@ -82,15 +82,14 @@ class TBTD_Player {
 					'count'       => __( 'Sentence %1$d of %2$d', 'translation-drill' ),
 					/* translators: %d: sentence number */
 					'goTo'        => __( 'Sentence %d', 'translation-drill' ),
-					'showAnswer'  => __( 'Show model answer', 'translation-drill' ),
+					'showAnswer'  => __( 'Reveal the model answer', 'translation-drill' ),
 					'hideAnswer'  => __( 'Hide model answer', 'translation-drill' ),
 					/* translators: spoken label for a gapped phrase. 1: its first letter, 2: number of letters */
 					'startsWith'  => __( 'Starts with %1$s, %2$d letters', 'translation-drill' ),
 					'tapReveal'   => __( 'Tap to see the full expression', 'translation-drill' ),
-					'listen'      => __( 'Listen', 'translation-drill' ),
+					'listen'      => __( 'Play the model answer', 'translation-drill' ),
 					'stop'        => __( 'Stop', 'translation-drill' ),
 					'loading'     => __( 'Loading', 'translation-drill' ),
-					'listenLabel' => __( 'Listen to the model answer', 'translation-drill' ),
 					'next'        => __( 'Next →', 'translation-drill' ),
 					'restart'     => __( 'Back to 1 ↺', 'translation-drill' ),
 				),
@@ -255,15 +254,31 @@ class TBTD_Player {
 					<ul class="tbtd-p-phrases" data-role="phrases"></ul>
 				</section>
 
-				<section class="tbtd-p-step" data-role="step-answer" aria-labelledby="tbtd-s3">
+				<section class="tbtd-p-step" data-role="step-version" aria-labelledby="tbtd-s3">
 					<p class="tbtd-p-step-head" id="tbtd-s3">
-						<span class="tbtd-p-step-num" data-role="answer-num">3</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Model answer', 'translation-drill' ); ?></span>
+						<span class="tbtd-p-step-num">3</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Your version', 'translation-drill' ); ?></span>
 					</p>
-					<button type="button" class="tbtd-p-btn tbtd-p-btn--primary" data-role="answer-btn"><?php esc_html_e( 'Show model answer', 'translation-drill' ); ?> <kbd>A</kbd></button>
+					<p class="tbtd-p-instruction"><?php esc_html_e( 'Now use these phrases to build the whole sentence.', 'translation-drill' ); ?></p>
+				</section>
+
+				<?php if ( ! empty( self::audio() ) ) : ?>
+					<section class="tbtd-p-step" data-role="step-listen" aria-labelledby="tbtd-s4">
+						<p class="tbtd-p-step-head" id="tbtd-s4">
+							<span class="tbtd-p-step-num">4</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Listen to the model answer', 'translation-drill' ); ?></span>
+						</p>
+						<p class="tbtd-p-instruction"><?php esc_html_e( 'Listen to the model answer. Repeat the sentence.', 'translation-drill' ); ?></p>
+						<button type="button" class="tbtd-p-btn tbtd-p-btn--primary tbtd-p-listen" data-role="listen" data-state="idle" hidden></button>
+					</section>
+				<?php endif; ?>
+
+				<section class="tbtd-p-step" data-role="step-answer" aria-labelledby="tbtd-s5">
+					<p class="tbtd-p-step-head" id="tbtd-s5">
+						<span class="tbtd-p-step-num">5</span><span class="tbtd-p-step-label"><?php esc_html_e( 'Model answer', 'translation-drill' ); ?></span>
+					</p>
+					<button type="button" class="tbtd-p-btn tbtd-p-btn--primary" data-role="answer-btn"><?php esc_html_e( 'Reveal the model answer', 'translation-drill' ); ?> <kbd>A</kbd></button>
 					<div class="tbtd-p-answer" data-role="answer-panel" hidden>
 						<p class="tbtd-p-sentence" lang="en" data-role="en"></p>
 						<div class="tbtd-p-answer-actions">
-							<button type="button" class="tbtd-p-btn tbtd-p-listen" data-role="listen" data-state="idle" hidden></button>
 							<button type="button" class="tbtd-p-btn" data-role="hide-btn"><?php esc_html_e( 'Hide model answer', 'translation-drill' ); ?></button>
 						</div>
 					</div>
